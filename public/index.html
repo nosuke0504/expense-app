@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>簡単家計簿</title>
-  <!-- OCRライブラリ (Tesseract.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #f4f6f8; color: #333; padding-bottom: 40px; }
@@ -91,13 +89,13 @@
     <!-- 2. カメラタブ -->
     <div id="camera-tab" class="tab-content">
       <div class="card">
-        <h2>レシートOCRスキャナー</h2>
+        <h2>✨ AI レシートスキャナー</h2>
         <div class="scanner-box">
           <video id="webcam" autoplay playsinline></video>
           <canvas id="snapshot-canvas"></canvas>
         </div>
-        <button id="scan-btn" class="btn" style="margin-top: 15px;" onclick="captureAndOCR()">📸 レシートを撮影して解析</button>
-        <div id="ocr-status" class="ocr-status">カメラ枠にレシートを合わせて「解析」を押してください</div>
+        <button id="scan-btn" class="btn" style="margin-top: 15px;" onclick="captureAndGeminiOCR()">🤖 AIでレシートを解析</button>
+        <div id="ocr-status" class="ocr-status">カメラにレシートをかざして「AIで解析」を押してください</div>
       </div>
     </div>
 
@@ -152,67 +150,70 @@
       }
     }
 
-    // OCR撮影＆解析処理（白黒二値化による精度向上版）
-async function captureAndOCR() {
-  const video = document.getElementById('webcam');
-  const canvas = document.getElementById('snapshot-canvas');
-  const statusEl = document.getElementById('ocr-status');
-  const scanBtn = document.getElementById('scan-btn');
+    // Gemini AIを活用したレシート撮影＆高精度解析処理
+    async function captureAndGeminiOCR() {
+      const video = document.getElementById('webcam');
+      const canvas = document.getElementById('snapshot-canvas');
+      const statusEl = document.getElementById('ocr-status');
+      const scanBtn = document.getElementById('scan-btn');
 
-  if (!videoStream) return;
+      if (!videoStream) return;
 
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // 【精度向上】白黒二値化処理（コントラスト強調）
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    // グレースケール化
-    const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-    // 閾値処理（文字を黒、背景を白にハッキリ分ける）
-    const v = avg > 130 ? 255 : 0;
-    data[i] = v;     // R
-    data[i + 1] = v; // G
-    data[i + 2] = v; // B
-  }
-  ctx.putImageData(imageData, 0, 0);
+      scanBtn.disabled = true;
+      statusEl.textContent = '🧠 Google Gemini AIがレシートを高度解析中...';
 
-  scanBtn.disabled = true;
-  statusEl.textContent = '🔍 画像を補正して解析中...';
+      // CanvasをBlob（画像ファイル）に変換して送信
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          statusEl.textContent = '❌ 画像のキャプチャに失敗しました';
+          scanBtn.disabled = false;
+          return;
+        }
 
-  try {
-    const worker = await Tesseract.createWorker('jpn');
-    const ret = await worker.recognize(canvas);
-    await worker.terminate();
+        const formData = new FormData();
+        formData.append('file', blob, 'receipt.jpg');
 
-    const text = ret.data.text;
-    console.log("OCR Result:", text);
+        try {
+          const res = await fetch('/api/scan-receipt', {
+            method: 'POST',
+            body: formData
+          });
 
-    // 金額抽出パターン（「合計」「計」「￥」などの後ろの数字を探す）
-    const amountMatch = text.match(/(?:合計|小計|計|￥|¥)\s*([0-9,]{3,})/i) || text.match(/([0-9,]{3,})\s*円/);
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.detail || 'AI解析失敗');
+          }
 
-    if (amountMatch) {
-      const amount = parseInt(amountMatch[1].replace(/,/g, ''), 10);
-      document.getElementById('amount').value = amount;
-      document.getElementById('memo').value = 'レシートスキャン登録';
-      statusEl.textContent = `✅ 金額 (¥${amount.toLocaleString()}) を読み取りました！入力画面へ移動します...`;
+          const result = await res.json();
+          console.log("Gemini AI Result:", result);
 
-      setTimeout(() => {
-        switchTab('input-tab');
-      }, 1500);
-    } else {
-      statusEl.textContent = '⚠️ 金額が見つかりませんでした。撮影角度や明るさを調整してください。';
+          if (result.amount) {
+            document.getElementById('amount').value = result.amount;
+            if (result.date) document.getElementById('date').value = result.date;
+            if (result.category) document.getElementById('category').value = result.category;
+            if (result.memo) document.getElementById('memo').value = result.memo;
+
+            statusEl.textContent = `✅ AI解析成功！(¥${result.amount.toLocaleString()} / ${result.memo || ''}) 入力画面へ移動します...`;
+
+            setTimeout(() => {
+              switchTab('input-tab');
+            }, 1800);
+          } else {
+            statusEl.textContent = '⚠️ レシートから金額を検出できませんでした。手動で入力してください。';
+          }
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = '❌ AI解析中にエラーが発生しました。';
+        } finally {
+          scanBtn.disabled = false;
+        }
+      }, 'image/jpeg', 0.85);
     }
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = '❌ 解析エラーが発生しました。';
-  } finally {
-    scanBtn.disabled = false;
-  }
-}
 
     // フォーム保存
     document.getElementById('expense-form').addEventListener('submit', async (e) => {
