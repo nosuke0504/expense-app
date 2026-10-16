@@ -51,7 +51,7 @@ class ExpenseDB(Base):
 
 app = FastAPI()
 
-# Gemini クライアントの初期化（サーバー起動時に1度だけ生成）
+# Gemini クライアントの初期化（起動時に1度だけ生成）
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -131,7 +131,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（思考スキップ＆爆速即答化設定）
+# Gemini AI レシート解析API（thinking_level="LOW" による爆速即答設定）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -154,20 +154,19 @@ async def scan_receipt(file: UploadFile = File(...)):
 
         t_ai_start = time.time()
 
-        # 思考（Thinking）処理を完全に0にし、必要最小限のトークン数で即答させる
+        # ★ 思考レベルを "LOW" に設定し、思考時間をカットして爆速応答させる
         try:
-            thinking_config = types.ThinkingConfig(thinking_budget=0)
+            thinking_config = types.ThinkingConfig(thinking_level="LOW")
         except Exception:
-            thinking_config = None
+            thinking_config = {"thinking_level": "LOW"}
 
         config_args = {
             "response_mime_type": "application/json",
             "response_schema": ReceiptParseResult,
-            "max_output_tokens": 100,
+            "max_output_tokens": 150,
             "temperature": 0.1,
+            "thinking_config": thinking_config,
         }
-        if thinking_config:
-            config_args["thinking_config"] = thinking_config
 
         response = gemini_client.models.generate_content(
             model='gemini-3.8-flash',
@@ -181,7 +180,7 @@ async def scan_receipt(file: UploadFile = File(...)):
         t_ai_end = time.time()
         print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 
-        # 解析結果の安全な抽出
+        # 解析結果の抽出
         result = None
         if hasattr(response, 'parsed') and response.parsed:
             if hasattr(response.parsed, 'model_dump'):
