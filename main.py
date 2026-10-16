@@ -146,7 +146,7 @@ async def scan_receipt(file: UploadFile = File(...)):
         )
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
                 prompt
