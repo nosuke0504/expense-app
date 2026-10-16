@@ -13,7 +13,11 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-# Gemini SDK
+# Google Cloud Vision API
+from google.cloud import vision
+from google.oauth2 import service_account
+
+# Google GenAI SDK (Gemini)
 from google import genai
 from google.genai import types
 
@@ -52,7 +56,18 @@ class ExpenseDB(Base):
 
 app = FastAPI()
 
-# Gemini クライアントの初期化（環境変数 GEMINI_API_KEY を使用）
+# 1. Vision API クライアントの初期化（環境変数 GOOGLE_APPLICATION_CREDENTIALS_JSON）
+vision_client = None
+gcp_json_str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+if gcp_json_str:
+    try:
+        credentials_info = json.loads(gcp_json_str)
+        credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        vision_client = vision.ImageAnnotatorClient(credentials=credentials)
+    except Exception as e:
+        print(f"Vision API Credentials Error: {e}")
+
+# 2. Gemini クライアントの初期化（環境変数 GEMINI_API_KEY）
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -132,66 +147,61 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（gemini-3.8-flash 思考オフ & 非同期リトライ最適化版）
+# ハイブリッド レシート解析API（Vision API [OCR] + Gemini [Text-to-JSON]）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
+    
+    if not vision_client:
+        raise HTTPException(status_code=500, detail="GOOGLE_APPLICATION_CREDENTIALS_JSON is not configured")
     if not gemini_client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set in environment variables")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set")
 
     try:
         image_bytes = await file.read()
-        t_upload = time.time()
         file_size_kb = len(image_bytes) / 1024
-        print(f"⏱️ [ログ] 画像受信完了: {file_size_kb:.1f} KB (受信時間: {t_upload - t_start:.2f}秒)")
+        print(f"⏱️ [ログ] 画像受信完了: {file_size_kb:.1f} KB")
 
-        prompt = "レシート画像から amount, date, category, memo を抽出してください。"
+        # --- STEP 1: Vision API で文字起こし ---
+        t_vision_start = time.time()
+        image = vision.Image(content=image_bytes)
+        vision_response = vision_client.text_detection(image=image)
 
-        t_ai_start = time.time()
+        if vision_response.error.message:
+            raise Exception(f"Vision API Error: {vision_response.error.message}")
 
-        # 思考レベルをLOWに固定して爆速化
-        try:
-            thinking_config = types.ThinkingConfig(thinking_level="low")
-        except Exception:
-            thinking_config = None
+        full_text = vision_response.full_text_annotation.text if vision_response.full_text_annotation else ""
+        t_vision_end = time.time()
+        print(f"⏱️ [ログ] 1/2 Vision API OCR時間: {t_vision_end - t_vision_start:.2f}秒")
 
-        config_args = {
-            "system_instruction": "You are a specialized receipt OCR parser. Always respond ONLY in raw JSON adhering to the schema. Never include greetings, prose, or markdown code blocks.",
-            "response_mime_type": "application/json",
-            "response_schema": ReceiptParseResult,
-            "max_output_tokens": 200,
-            "temperature": 0.0,
-        }
-        if thinking_config:
-            config_args["thinking_config"] = thinking_config
+        if not full_text.strip():
+            raise HTTPException(status_code=400, detail="レシートから文字を検出できませんでした")
 
-        config = types.GenerateContentConfig(**config_args)
+        # --- STEP 2: Gemini でテキスト構造化 (JSON化) ---
+        t_gemini_start = time.time()
+        prompt = f"""以下はレシートから抽出された生のテキストです。
+ここから amount(数値), date(YYYY/MM/DD形式), category(食費/日用品/交通費/交際費/その他), memo(店舗名や概要) を抽出してJSONで返してください。
 
-        # 503エラー時の自動リトライ機能
-        response = None
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = await gemini_client.aio.models.generate_content(
-                    model='gemini-3.8-flash',
-                    contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
-                        prompt
-                    ],
-                    config=config,
-                )
-                break
-            except Exception as e:
-                if ("503" in str(e) or "UNAVAILABLE" in str(e)) and attempt < max_retries - 1:
-                    print(f"⚠️ Gemini 503エラー検知。自動リトライ中... ({attempt + 1}/{max_retries})")
-                    await asyncio.sleep(1)
-                    continue
-                raise e
+【レシートテキスト】:
+{full_text}"""
 
-        t_ai_end = time.time()
-        print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
+        config = types.GenerateContentConfig(
+            system_instruction="You are an expert OCR parser. Return strictly valid JSON adhering to the schema.",
+            response_mime_type="application/json",
+            response_schema=ReceiptParseResult,
+            temperature=0.0,
+        )
 
-        # レスポンス抽出（parsedオブジェクト）
+        response = await gemini_client.aio.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=config,
+        )
+        t_gemini_end = time.time()
+        print(f"⏱️ [ログ] 2/2 Gemini JSON生成時間: {t_gemini_end - t_gemini_start:.2f}秒")
+        print(f"⚡ [ログ] 全体処理時間: {t_gemini_end - t_start:.2f}秒")
+
+        # JSON結果抽出
         result = None
         if hasattr(response, 'parsed') and response.parsed:
             if hasattr(response.parsed, 'model_dump'):
@@ -201,17 +211,10 @@ async def scan_receipt(file: UploadFile = File(...)):
             else:
                 result = response.parsed
 
-        # parsedで取得できない場合の正規表現フォールバック抽出
         if not result and getattr(response, 'text', None):
-            raw_text = response.text.strip()
-            print(f"📄 [AI生レスポンス]: {raw_text}")
-            
-            json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
             if json_match:
-                try:
-                    result = json.loads(json_match.group(0))
-                except Exception as json_err:
-                    print(f"⚠️ JSON Parse Error: {json_err}")
+                result = json.loads(json_match.group(0))
 
         if not result:
             raise ValueError("AIからの応答データからJSONを抽出できませんでした")
@@ -219,8 +222,8 @@ async def scan_receipt(file: UploadFile = File(...)):
         return result
 
     except Exception as e:
-        print(f"Gemini OCR Error: {e}")
-        raise HTTPException(status_code=500, detail=f"AI parsing failed: {str(e)}")
+        print(f"Hybrid Scan Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
 
 app.mount("/public", StaticFiles(directory="public"), name="public")
 
