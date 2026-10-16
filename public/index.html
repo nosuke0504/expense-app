@@ -123,7 +123,6 @@
 
       if (tabId === 'camera-tab') {
         startCamera();
-        // ★ タブを開いた瞬間にサーバーを起こすウォームアップ通信
         fetch('/api/expenses').catch(() => {});
       } else {
         stopCamera();
@@ -152,7 +151,7 @@
       }
     }
 
-    // Gemini AI レシート超高速解析処理
+    // Gemini AI 高精度・高速スキャン（横幅600px / 品質0.5の最適設定）
     async function captureAndGeminiOCR() {
       const video = document.getElementById('webcam');
       const canvas = document.getElementById('snapshot-canvas');
@@ -161,7 +160,6 @@
 
       if (!videoStream) return;
 
-      // 幅を最大600pxに縮小（通信サイズを数KBに抑えて超高速化）
       const targetWidth = 600;
       const scale = targetWidth / (video.videoWidth || 640);
       const targetHeight = Math.round((video.videoHeight || 480) * scale);
@@ -172,9 +170,8 @@
       ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
 
       scanBtn.disabled = true;
-      statusEl.textContent = '⚡ 超軽量画像を作成して解析中...';
+      statusEl.textContent = '⚡ 画像を送信して高速解析中...';
 
-      // 圧縮率0.5で確実に軽量化
       canvas.toBlob(async (blob) => {
         if (!blob) {
           statusEl.textContent = '❌ 画像キャプチャ失敗';
@@ -210,7 +207,7 @@
 
             setTimeout(() => {
               switchTab('input-tab');
-            }, 600);
+            }, 500);
           } else {
             statusEl.textContent = '⚠️ 金額が検出できませんでした';
           }
@@ -223,7 +220,6 @@
       }, 'image/jpeg', 0.5);
     }
 
-    // フォーム保存
     document.getElementById('expense-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = {
@@ -248,7 +244,6 @@
       }
     });
 
-    // 履歴取得
     async function loadHistory() {
       const listEl = document.getElementById('history-list');
       const totalEl = document.getElementById('total-amount');
@@ -290,7 +285,6 @@
       totalEl.textContent = total.toLocaleString();
     }
 
-    // 削除
     async function deleteItem(id) {
       if (!confirm('本当に削除しますか？')) return;
       const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
