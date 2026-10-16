@@ -130,7 +130,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（高速化・処理時間ログ出力対応）
+# Gemini AI レシート解析API（高速化・503エラー自動再試行・処理時間ログ出力対応）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -152,18 +152,32 @@ async def scan_receipt(file: UploadFile = File(...)):
         )
 
         t_ai_start = time.time()
-        response = gemini_client.models.generate_content(
-            model='gemini-3.8-flash',
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
-                prompt
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ReceiptParseResult,
-                max_output_tokens=150,
-            ),
-        )
+
+        # Google側の503一時エラー対策（最大3回自動リトライ）
+        response = None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = gemini_client.models.generate_content(
+                    model='gemini-3.8-flash',
+                    contents=[
+                        types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
+                        prompt
+                    ],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ReceiptParseResult,
+                        max_output_tokens=150,
+                    ),
+                )
+                break
+            except Exception as e:
+                if ("503" in str(e) or "UNAVAILABLE" in str(e)) and attempt < max_retries - 1:
+                    print(f"⚠️ Gemini 503エラー検知。自動リトライ中... ({attempt + 1}/{max_retries})")
+                    time.sleep(1)
+                    continue
+                raise e
+
         t_ai_end = time.time()
         print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 

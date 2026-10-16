@@ -152,7 +152,7 @@
       }
     }
 
-    // Gemini AI レシート高速解析処理
+    // Gemini AI レシート超高速解析処理
     async function captureAndGeminiOCR() {
       const video = document.getElementById('webcam');
       const canvas = document.getElementById('snapshot-canvas');
@@ -161,7 +161,7 @@
 
       if (!videoStream) return;
 
-      // 幅を最大600pxに強制作成（スマホでの爆速化・数十KB化）
+      // 幅を最大600pxに縮小（通信サイズを数KBに抑えて超高速化）
       const targetWidth = 600;
       const scale = targetWidth / (video.videoWidth || 640);
       const targetHeight = Math.round((video.videoHeight || 480) * scale);
@@ -174,7 +174,7 @@
       scanBtn.disabled = true;
       statusEl.textContent = '⚡ 超軽量画像を作成して解析中...';
 
-      // 圧縮率0.5で確実に軽量化（30KB〜50KB程度に抑制）
+      // 圧縮率0.5で確実に軽量化
       canvas.toBlob(async (blob) => {
         if (!blob) {
           statusEl.textContent = '❌ 画像キャプチャ失敗';
