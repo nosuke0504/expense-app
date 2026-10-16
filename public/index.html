@@ -21,8 +21,8 @@
     .form-group label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 5px; }
     .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
     
-    .btn { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
-    .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+    .btn { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: background-color 0.2s; }
+    .btn:disabled { background-color: #93c5fd; cursor: not-allowed; }
 
     .scanner-box { position: relative; background: #000; border-radius: 8px; overflow: hidden; text-align: center; color: #fff; min-height: 250px; }
     video { width: 100%; max-height: 280px; object-fit: cover; }
@@ -47,9 +47,9 @@
   <header>簡単家計簿</header>
 
   <div class="nav-tabs">
-    <button class="tab-btn active" onclick="switchTab('input-tab')">✏️ 手動入力</button>
-    <button class="tab-btn" onclick="switchTab('camera-tab')">📷 スキャン</button>
-    <button class="tab-btn" onclick="switchTab('history-tab')">📋 支出履歴</button>
+    <button class="tab-btn active" onclick="switchTab('input-tab', event)">✏️ 手動入力</button>
+    <button class="tab-btn" onclick="switchTab('camera-tab', event)">📷 スキャン</button>
+    <button class="tab-btn" onclick="switchTab('history-tab', event)">📋 支出履歴</button>
   </div>
 
   <div class="container">
@@ -113,13 +113,18 @@
   </div>
 
   <script>
-    document.getElementById('date').valueAsDate = new Date();
+    // ★ 日本時間(JST)で今日の日付を確実にセット (YYYY-MM-DD)
+    const todayJST = new Date().toLocaleDateString('sv-SE');
+    document.getElementById('date').value = todayJST;
 
-    function switchTab(tabId) {
+    function switchTab(tabId, evt) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
       document.getElementById(tabId).classList.add('active');
-      if (event && event.target) event.target.classList.add('active');
+      
+      if (evt && evt.target) {
+        evt.target.classList.add('active');
+      }
 
       if (tabId === 'camera-tab') {
         startCamera();
@@ -134,6 +139,7 @@
 
     let videoStream = null;
     async function startCamera() {
+      if (videoStream) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         videoStream = stream;
@@ -151,7 +157,7 @@
       }
     }
 
-    // Gemini AI 高精度・高速スキャン（横幅600px / 品質0.5の最適設定）
+    // Gemini AI レシート最適化スキャン（600px / 品質0.5）
     async function captureAndGeminiOCR() {
       const video = document.getElementById('webcam');
       const canvas = document.getElementById('snapshot-canvas');
@@ -170,7 +176,7 @@
       ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
 
       scanBtn.disabled = true;
-      statusEl.textContent = '⚡ 画像を送信して高速解析中...';
+      statusEl.textContent = '⚡ 解析中...';
 
       canvas.toBlob(async (blob) => {
         if (!blob) {
@@ -206,7 +212,8 @@
             statusEl.textContent = `✅ 解析完了！(¥${result.amount.toLocaleString()} / ${result.memo || ''})`;
 
             setTimeout(() => {
-              switchTab('input-tab');
+              const inputTabBtn = document.querySelectorAll('.tab-btn')[0];
+              switchTab('input-tab', { target: inputTabBtn });
             }, 500);
           } else {
             statusEl.textContent = '⚠️ 金額が検出できませんでした';
@@ -239,6 +246,7 @@
         alert('保存しました！');
         document.getElementById('amount').value = '';
         document.getElementById('memo').value = '';
+        document.getElementById('date').value = todayJST;
       } else {
         alert('エラーが発生しました');
       }
