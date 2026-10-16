@@ -147,7 +147,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# ハイブリッド レシート解析API（Vision API [OCR] + Gemini [Text-to-JSON]）
+# ハイブリッド レシート解析API（Vision API [OCR] + Gemini 3.8 Flash [Text-to-JSON]）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -193,7 +193,7 @@ async def scan_receipt(file: UploadFile = File(...)):
         )
 
         response = await gemini_client.aio.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',
             contents=prompt,
             config=config,
         )
