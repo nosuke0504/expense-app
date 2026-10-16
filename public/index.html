@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>家計簿アプリ</title>
+  <title>簡単家計簿</title>
+  <!-- OCRライブラリ (Tesseract.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #f4f6f8; color: #333; padding-bottom: 40px; }
@@ -22,11 +24,13 @@
     .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
     
     .btn { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
-    .btn:active { background-color: #0056b3; }
+    .btn:disabled { background-color: #ccc; cursor: not-allowed; }
 
     .scanner-box { position: relative; background: #000; border-radius: 8px; overflow: hidden; text-align: center; color: #fff; min-height: 250px; }
     video { width: 100%; max-height: 280px; object-fit: cover; }
-    .scanner-overlay { position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; border: 2px dashed #00ffcc; border-radius: 8px; pointer-events: none; }
+    canvas { display: none; }
+    
+    .ocr-status { margin-top: 12px; text-align: center; font-size: 0.9rem; font-weight: bold; color: #007bff; min-height: 24px; }
 
     .history-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #eee; }
     .history-item:last-child { border-bottom: none; }
@@ -87,14 +91,13 @@
     <!-- 2. カメラタブ -->
     <div id="camera-tab" class="tab-content">
       <div class="card">
-        <h2>かざすだけスキャナー</h2>
+        <h2>レシートOCRスキャナー</h2>
         <div class="scanner-box">
           <video id="webcam" autoplay playsinline></video>
-          <div class="scanner-overlay"></div>
+          <canvas id="snapshot-canvas"></canvas>
         </div>
-        <p style="text-align: center; margin-top: 10px; font-size: 0.85rem; color: #666;">
-          レシートをかざしてください（準備中）
-        </p>
+        <button id="scan-btn" class="btn" style="margin-top: 15px;" onclick="captureAndOCR()">📸 レシートを撮影して解析</button>
+        <div id="ocr-status" class="ocr-status">カメラ枠にレシートを合わせて「解析」を押してください</div>
       </div>
     </div>
 
@@ -112,14 +115,13 @@
   </div>
 
   <script>
-    // 今日をデフォルト日付に設定
     document.getElementById('date').valueAsDate = new Date();
 
     function switchTab(tabId) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
       document.getElementById(tabId).classList.add('active');
-      event.target.classList.add('active');
+      if (event && event.target) event.target.classList.add('active');
 
       if (tabId === 'camera-tab') {
         startCamera();
@@ -131,7 +133,6 @@
       }
     }
 
-    // カメラ機能
     let videoStream = null;
     async function startCamera() {
       try {
@@ -139,9 +140,11 @@
         videoStream = stream;
         document.getElementById('webcam').srcObject = stream;
       } catch (e) {
-        console.error("Camera access error:", e);
+        console.error("Camera error:", e);
+        document.getElementById('ocr-status').textContent = 'カメラの起動に失敗しました';
       }
     }
+
     function stopCamera() {
       if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
@@ -149,7 +152,55 @@
       }
     }
 
-    // フォーム送信（保存）
+    // OCR撮影＆解析処理
+    async function captureAndOCR() {
+      const video = document.getElementById('webcam');
+      const canvas = document.getElementById('snapshot-canvas');
+      const statusEl = document.getElementById('ocr-status');
+      const scanBtn = document.getElementById('scan-btn');
+
+      if (!videoStream) return;
+
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      scanBtn.disabled = true;
+      statusEl.textContent = '🔍 画像を解析中...（数秒かかります）';
+
+      try {
+        const worker = await Tesseract.createWorker('jpn');
+        const ret = await worker.recognize(canvas);
+        await worker.terminate();
+
+        const text = ret.data.text;
+        console.log("OCR Result:", text);
+
+        // 金額（数字）の抽出ロジック（合計/小計/￥マークに続く数字などを探索）
+        const amountMatch = text.match(/(?:合計|小計|計|￥|¥)\s*([0-9,]{3,})/i) || text.match(/([0-9,]{3,})\s*円/);
+
+        if (amountMatch) {
+          const amount = parseInt(amountMatch[1].replace(/,/g, ''), 10);
+          document.getElementById('amount').value = amount;
+          document.getElementById('memo').value = 'レシートスキャン登録';
+          statusEl.textContent = `✅ 金額 (¥${amount.toLocaleString()}) を読み取りました！入力画面へ移動します...`;
+
+          setTimeout(() => {
+            switchTab('input-tab');
+          }, 1500);
+        } else {
+          statusEl.textContent = '⚠️ 金額が見つかりませんでした。手動で入力してください。';
+        }
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = '❌ 解析エラーが発生しました。';
+      } finally {
+        scanBtn.disabled = false;
+      }
+    }
+
+    // フォーム保存
     document.getElementById('expense-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = {
@@ -216,7 +267,7 @@
       totalEl.textContent = total.toLocaleString();
     }
 
-    // 削除処理
+    // 削除
     async function deleteItem(id) {
       if (!confirm('本当に削除しますか？')) return;
       const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
