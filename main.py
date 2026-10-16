@@ -131,7 +131,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（gemini-3.8-flash + 思考時間完全カット設定）
+# Gemini AI レシート解析API（安定性・トークン上限最適化版）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -145,8 +145,8 @@ async def scan_receipt(file: UploadFile = File(...)):
         print(f"⏱️ [ログ] 画像受信完了: {file_size_kb:.1f} KB (受信時間: {t_upload - t_start:.2f}秒)")
 
         prompt = (
-            "レシートから抽出してJSON出力:\n"
-            "amount: 合計金額(数値)\n"
+            "レシート画像から以下を抽出してJSONで出力してください:\n"
+            "amount: 支払合計金額(数値)\n"
             "date: 日付(YYYY-MM-DD)\n"
             "category: 食費,日用品,交通費,娯楽,その他\n"
             "memo: 店舗名"
@@ -154,16 +154,16 @@ async def scan_receipt(file: UploadFile = File(...)):
 
         t_ai_start = time.time()
 
-        # gemini-3.8-flash を指定（思考機能を完全OFFにして高速化）
+        # max_output_tokens=300 で出力途切れを完全に防ぎます
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ReceiptParseResult,
-            max_output_tokens=80,
+            max_output_tokens=300,
             temperature=0.0,
             thinking_config=types.ThinkingConfig(thinking_budget=0)
         )
 
-        # 503エラー発生時の自動リトライ付き非同期実行
+        # 503エラー発生時の自動リトライ付き非同期通信
         response = None
         max_retries = 3
         for attempt in range(max_retries):
@@ -187,7 +187,7 @@ async def scan_receipt(file: UploadFile = File(...)):
         t_ai_end = time.time()
         print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 
-        # 解析結果の抽出
+        # 解析結果の抽出処理
         result = None
         if hasattr(response, 'parsed') and response.parsed:
             if hasattr(response.parsed, 'model_dump'):
@@ -197,12 +197,18 @@ async def scan_receipt(file: UploadFile = File(...)):
             else:
                 result = response.parsed
 
-        if not result and response.text:
-            cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
-            result = json.loads(cleaned_text)
+        if not result and getattr(response, 'text', None):
+            raw_text = response.text.strip()
+            print(f"📄 [AI生レスポンス]: {raw_text}")
+            cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
+            if cleaned_text:
+                try:
+                    result = json.loads(cleaned_text)
+                except Exception as json_err:
+                    print(f"⚠️ JSON Parse Error: {json_err}")
 
         if not result:
-            raise ValueError("AIからの応答データを解析できませんでした")
+            raise ValueError("AIからの応答データが空、または解析不可能な形式です")
 
         return result
 
