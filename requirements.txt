@@ -1,5 +1,5 @@
 fastapi
 uvicorn
-jinja2
-python-multipart
-openpyxl
+sqlalchemy
+psycopg2-binary
+pydantic
