@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>かざすだけレシート照合スキャナー</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #1a1a1a;
+      color: #ffffff;
+      margin: 0;
+      padding: 16px;
+      text-align: center;
+    }
+    h1 { font-size: 1.1rem; margin-bottom: 12px; }
+    
+    /* カメラ表示コンテナ */
+    .camera-container {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    video {
+      width: 100%;
+      border-radius: 12px;
+      background: #000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    /* 照合結果表示エリア（デカデカ表示） */
+    #result-overlay {
+      margin-top: 16px;
+      padding: 24px;
+      border-radius: 12px;
+      background-color: #333;
+      transition: background-color 0.3s ease;
+    }
+    .status-text {
+      font-size: 1.2rem;
+      color: #bbb;
+    }
+    /* 一致した時の巨大ナンバー表示 */
+    .matched-no {
+      font-size: 3.5rem;
+      font-weight: bold;
+      color: #00FF66;
+      margin-top: 8px;
+    }
+    
+    /* 読み取り補助枠 */
+    .guide-box {
+      position: absolute;
+      top: 15%;
+      left: 10%;
+      width: 80%;
+      height: 70%;
+      border: 2px dashed rgba(255, 255, 255, 0.6);
+      border-radius: 8px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>📷 かざすだけスキャナー</h1>
+
+  <div class="camera-container">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="guide-box"></div>
+  </div>
+
+  <!-- 非表示のCanvas（フレーム切出用） -->
+  <canvas id="canvas" style="display: none;"></canvas>
+
+  <div id="result-overlay">
+    <div id="status" class="status-text">カメラにかざしてください...</div>
+    <div id="number-display"></div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const statusDiv = document.getElementById('status');
+    const numberDisplay = document.getElementById('number-display');
+    const overlay = document.getElementById('result-overlay');
+
+    let isScanning = false;
+
+    // 1. スマホのアウトカメラ起動
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+        video.srcObject = stream;
+        
+        // 1秒ごとにフレームをキャプチャしてサーバーへ送る
+        setInterval(captureAndSend, 1000);
+      } catch (err) {
+        statusDiv.innerText = "❌ カメラエラー: " + err.message;
+      }
+    }
+
+    // 2. カメラ映像を1フレーム切り出して送信
+    async function captureAndSend() {
+      if (isScanning || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      isScanning = true;
+
+      // canvasに映像を描画
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // canvasの画像をBlobデータ（JPEG）に変換して送信
+      canvas.toBlob(async (blob) => {
+        if (!blob) { isScanning = false; return; }
+
+        const formData = new FormData();
+        formData.append('file', blob, 'frame.jpg');
+
+        try {
+          const response = await fetch('/api/scan', {
+            method: 'POST',
+            body: formData
+          });
+          const result = await response.json();
+
+          if (result.found) {
+            // マッチした場合は緑色背景＋デカ文字表示
+            overlay.style.backgroundColor = "#1b5e20";
+            statusDiv.innerText = "一致するレシートが見つかりました！";
+            numberDisplay.className = "matched-no";
+            numberDisplay.innerText = `確定 No. ${result.confirmed_no}`;
+            
+            // スマホをブルッと震わせる（対応端末のみ）
+            if (navigator.vibrate) navigator.vibrate(200);
+          } else {
+            // 未マッチ時は通常表示に戻す
+            overlay.style.backgroundColor = "#333";
+            statusDiv.innerText = "照合中... レシートをかざしてください";
+            numberDisplay.innerText = "";
+          }
+        } catch (err) {
+          console.error("送信エラー:", err);
+        } finally {
+          isScanning = false;
+        }
+      }, 'image/jpeg', 0.7);
+    }
+
+    window.addEventListener('DOMContentLoaded', startCamera);
+  </script>
+</body>
+</html>
