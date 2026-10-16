@@ -51,7 +51,7 @@ class ExpenseDB(Base):
 
 app = FastAPI()
 
-# Gemini クライアントの初期化（サーバー起動時に1度だけ生成して高速化）
+# Gemini クライアントの初期化（サーバー起動時に1度だけ生成）
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -131,7 +131,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（JSONパース安全対策版）
+# Gemini AI レシート解析API（思考スキップ＆爆速即答化設定）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -154,33 +154,34 @@ async def scan_receipt(file: UploadFile = File(...)):
 
         t_ai_start = time.time()
 
-        response = None
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = gemini_client.models.generate_content(
-                    model='gemini-3.8-flash',
-                    contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
-                        prompt
-                    ],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=ReceiptParseResult,
-                    ),
-                )
-                break
-            except Exception as e:
-                if ("503" in str(e) or "UNAVAILABLE" in str(e)) and attempt < max_retries - 1:
-                    print(f"⚠️ Gemini 503エラー検知。自動リトライ中... ({attempt + 1}/{max_retries})")
-                    time.sleep(1)
-                    continue
-                raise e
+        # 思考（Thinking）処理を完全に0にし、必要最小限のトークン数で即答させる
+        try:
+            thinking_config = types.ThinkingConfig(thinking_budget=0)
+        except Exception:
+            thinking_config = None
+
+        config_args = {
+            "response_mime_type": "application/json",
+            "response_schema": ReceiptParseResult,
+            "max_output_tokens": 100,
+            "temperature": 0.1,
+        }
+        if thinking_config:
+            config_args["thinking_config"] = thinking_config
+
+        response = gemini_client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
+                prompt
+            ],
+            config=types.GenerateContentConfig(**config_args),
+        )
 
         t_ai_end = time.time()
         print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 
-        # 解析結果の安全な抽出処理
+        # 解析結果の安全な抽出
         result = None
         if hasattr(response, 'parsed') and response.parsed:
             if hasattr(response.parsed, 'model_dump'):
