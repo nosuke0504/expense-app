@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import re
 from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
@@ -130,7 +131,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（高速化・503エラー自動再試行・処理時間ログ出力対応）
+# Gemini AI レシート解析API（JSONパース安全対策版）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -153,7 +154,6 @@ async def scan_receipt(file: UploadFile = File(...)):
 
         t_ai_start = time.time()
 
-        # Google側の503一時エラー対策（最大3回自動リトライ）
         response = None
         max_retries = 3
         for attempt in range(max_retries):
@@ -167,7 +167,6 @@ async def scan_receipt(file: UploadFile = File(...)):
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema=ReceiptParseResult,
-                        max_output_tokens=150,
                     ),
                 )
                 break
@@ -181,7 +180,23 @@ async def scan_receipt(file: UploadFile = File(...)):
         t_ai_end = time.time()
         print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 
-        result = json.loads(response.text)
+        # 解析結果の安全な抽出処理
+        result = None
+        if hasattr(response, 'parsed') and response.parsed:
+            if hasattr(response.parsed, 'model_dump'):
+                result = response.parsed.model_dump()
+            elif hasattr(response.parsed, 'dict'):
+                result = response.parsed.dict()
+            else:
+                result = response.parsed
+
+        if not result and response.text:
+            cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
+            result = json.loads(cleaned_text)
+
+        if not result:
+            raise ValueError("AIからの応答データを解析できませんでした")
+
         return result
 
     except Exception as e:
