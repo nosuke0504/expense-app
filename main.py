@@ -7,19 +7,25 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-# Supabase DATABASE_URL の読み込みとドライバー指定
+# Pydantic V1 / V2 両対応の互換性設定
+try:
+    from pydantic import ConfigDict
+    HAS_PYDANTIC_V2 = True
+except ImportError:
+    HAS_PYDANTIC_V2 = False
+
+# Supabase DATABASE_URL の接続文字列変換
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif DATABASE_URL.startswith("postgresql://"):
+    elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+"):
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 if DATABASE_URL:
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 else:
     engine = None
@@ -37,10 +43,16 @@ class ExpenseDB(Base):
     memo = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-if engine:
-    Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
+
+# 起動時に安全にテーブルを作成
+@app.on_event("startup")
+def startup_event():
+    if engine:
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as e:
+            print(f"DB Init Warning: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +71,7 @@ def get_db():
     finally:
         db.close()
 
+# スキーマ定義
 class ExpenseCreate(BaseModel):
     date: str
     amount: float
@@ -72,8 +85,11 @@ class ExpenseResponse(BaseModel):
     category: str
     memo: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    if HAS_PYDANTIC_V2:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
 
 # API エンドポイント
 @app.get("/api/expenses", response_model=List[ExpenseResponse])
