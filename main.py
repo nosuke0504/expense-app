@@ -131,7 +131,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（thinking_level="LOW" による爆速即答設定）
+# Gemini AI レシート解析API（gemini-2.5-flash + 思考時間0完全無効化）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -145,36 +145,32 @@ async def scan_receipt(file: UploadFile = File(...)):
         print(f"⏱️ [ログ] 画像受信完了: {file_size_kb:.1f} KB (受信時間: {t_upload - t_start:.2f}秒)")
 
         prompt = (
-            "レシート画像から以下を抽出してJSON出力:\n"
-            "amount: 支払合計金額(数値のみ)\n"
+            "レシートから抽出してJSON出力:\n"
+            "amount: 合計金額(数値)\n"
             "date: 日付(YYYY-MM-DD)\n"
-            "category: 食費,日用品,交通費,娯楽,その他のいずれか\n"
+            "category: 食費,日用品,交通費,娯楽,その他\n"
             "memo: 店舗名"
         )
 
         t_ai_start = time.time()
 
-        # ★ 思考レベルを "LOW" に設定し、思考時間をカットして爆速応答させる
-        try:
-            thinking_config = types.ThinkingConfig(thinking_level="LOW")
-        except Exception:
-            thinking_config = {"thinking_level": "LOW"}
+        # gemini-2.5-flash で thinking_budget=0 を指定し、思考時間を完全に排除
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=ReceiptParseResult,
+            max_output_tokens=100,
+            temperature=0.0,
+            thinking_config=types.ThinkingConfig(thinking_budget=0)
+        )
 
-        config_args = {
-            "response_mime_type": "application/json",
-            "response_schema": ReceiptParseResult,
-            "max_output_tokens": 150,
-            "temperature": 0.1,
-            "thinking_config": thinking_config,
-        }
-
-        response = gemini_client.models.generate_content(
-            model='gemini-3.8-flash',
+        # 非同期(aio)呼び出し
+        response = await gemini_client.aio.models.generate_content(
+            model='gemini-2.5-flash',
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
                 prompt
             ],
-            config=types.GenerateContentConfig(**config_args),
+            config=config,
         )
 
         t_ai_end = time.time()
