@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
@@ -49,6 +50,10 @@ class ExpenseDB(Base):
 
 app = FastAPI()
 
+# Gemini クライアントの初期化（サーバー起動時に1度だけ生成して高速化）
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
 @app.on_event("startup")
 def startup_event():
     if engine:
@@ -93,7 +98,6 @@ class ExpenseResponse(BaseModel):
         class Config:
             orm_mode = True
 
-# AI解析レスポンス構造体
 class ReceiptParseResult(BaseModel):
     amount: Optional[float] = None
     date: Optional[str] = None
@@ -126,26 +130,29 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API
+# Gemini AI レシート解析API（高速化・処理時間ログ出力対応）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    t_start = time.time()
+    if not gemini_client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set in environment variables")
 
     try:
         image_bytes = await file.read()
-        client = genai.Client(api_key=api_key)
+        t_upload = time.time()
+        file_size_kb = len(image_bytes) / 1024
+        print(f"⏱️ [ログ] 画像受信完了: {file_size_kb:.1f} KB (受信時間: {t_upload - t_start:.2f}秒)")
 
         prompt = (
-            "提供されたレシート画像から以下の情報を抽出し、JSONで出力してください。\n"
-            "1. amount: 支払合計金額（数値のみ。例: 1280）\n"
-            "2. date: 購入日付（YYYY-MM-DD形式。例: 2026-10-17。年が不明な場合は今年とする）\n"
-            "3. category: カテゴリ（'食費', '日用品', '交通費', '娯楽', 'その他' のいずれか1つを判定）\n"
-            "4. memo: 店舗名や主な購入物の概要（例: サイゼリヤ）\n"
+            "レシート画像から以下を抽出してJSON出力:\n"
+            "amount: 支払合計金額(数値のみ)\n"
+            "date: 日付(YYYY-MM-DD)\n"
+            "category: 食費,日用品,交通費,娯楽,その他のいずれか\n"
+            "memo: 店舗名"
         )
 
-        response = client.models.generate_content(
+        t_ai_start = time.time()
+        response = gemini_client.models.generate_content(
             model='gemini-3.8-flash',
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=file.content_type or "image/jpeg"),
@@ -154,8 +161,11 @@ async def scan_receipt(file: UploadFile = File(...)):
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=ReceiptParseResult,
+                max_output_tokens=150,
             ),
         )
+        t_ai_end = time.time()
+        print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 
         result = json.loads(response.text)
         return result

@@ -123,6 +123,8 @@
 
       if (tabId === 'camera-tab') {
         startCamera();
+        // ★ タブを開いた瞬間にサーバーを起こすウォームアップ通信
+        fetch('/api/expenses').catch(() => {});
       } else {
         stopCamera();
       }
@@ -150,7 +152,7 @@
       }
     }
 
-    // Gemini AIを活用したレシート撮影＆高精度解析処理（高速化・軽量化版）
+    // Gemini AI レシート高速解析処理
     async function captureAndGeminiOCR() {
       const video = document.getElementById('webcam');
       const canvas = document.getElementById('snapshot-canvas');
@@ -159,44 +161,33 @@
 
       if (!videoStream) return;
 
-      // 【高速化1】画像の長辺を最大1000pxに縮小（画質を保ちつつデータ量を1/10以下へ）
-      const MAX_SIZE = 1000;
-      let width = video.videoWidth || 640;
-      let height = video.videoHeight || 480;
+      // 幅を最大600pxに強制作成（スマホでの爆速化・数十KB化）
+      const targetWidth = 600;
+      const scale = targetWidth / (video.videoWidth || 640);
+      const targetHeight = Math.round((video.videoHeight || 480) * scale);
 
-      if (width > height) {
-        if (width > MAX_SIZE) {
-          height = Math.round((height * MAX_SIZE) / width);
-          width = MAX_SIZE;
-        }
-      } else {
-        if (height > MAX_SIZE) {
-          width = Math.round((width * MAX_SIZE) / height);
-          height = MAX_SIZE;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, width, height);
+      ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
 
       scanBtn.disabled = true;
-      statusEl.textContent = '⚡ 画像を軽量化してAIへ送信中...';
+      statusEl.textContent = '⚡ 超軽量画像を作成して解析中...';
 
-      // 【高速化2】圧縮率を0.7に設定してファイルサイズを数十KB〜百KB程度に抑制
+      // 圧縮率0.5で確実に軽量化（30KB〜50KB程度に抑制）
       canvas.toBlob(async (blob) => {
         if (!blob) {
-          statusEl.textContent = '❌ 画像のキャプチャに失敗しました';
+          statusEl.textContent = '❌ 画像キャプチャ失敗';
           scanBtn.disabled = false;
           return;
         }
+
+        console.log(`送信画像サイズ: ${(blob.size / 1024).toFixed(1)} KB`);
 
         const formData = new FormData();
         formData.append('file', blob, 'receipt.jpg');
 
         try {
-          statusEl.textContent = '🧠 Google Gemini AIが高速解析中...';
           const res = await fetch('/api/scan-receipt', {
             method: 'POST',
             body: formData
@@ -208,7 +199,6 @@
           }
 
           const result = await res.json();
-          console.log("Gemini AI Result:", result);
 
           if (result.amount) {
             document.getElementById('amount').value = result.amount;
@@ -216,21 +206,21 @@
             if (result.category) document.getElementById('category').value = result.category;
             if (result.memo) document.getElementById('memo').value = result.memo;
 
-            statusEl.textContent = `✅ AI解析完了！(¥${result.amount.toLocaleString()} / ${result.memo || ''})`;
+            statusEl.textContent = `✅ 解析完了！(¥${result.amount.toLocaleString()} / ${result.memo || ''})`;
 
             setTimeout(() => {
               switchTab('input-tab');
-            }, 1000);
+            }, 600);
           } else {
-            statusEl.textContent = '⚠️ レシートから金額を検出できませんでした。手動で入力してください。';
+            statusEl.textContent = '⚠️ 金額が検出できませんでした';
           }
         } catch (err) {
           console.error(err);
-          statusEl.textContent = '❌ AI解析中にエラーが発生しました。';
+          statusEl.textContent = '❌ 解析エラー';
         } finally {
           scanBtn.disabled = false;
         }
-      }, 'image/jpeg', 0.7);
+      }, 'image/jpeg', 0.5);
     }
 
     // フォーム保存
