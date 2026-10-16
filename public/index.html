@@ -150,7 +150,7 @@
       }
     }
 
-    // Gemini AIを活用したレシート撮影＆高精度解析処理
+    // Gemini AIを活用したレシート撮影＆高精度解析処理（高速化・軽量化版）
     async function captureAndGeminiOCR() {
       const video = document.getElementById('webcam');
       const canvas = document.getElementById('snapshot-canvas');
@@ -159,15 +159,32 @@
 
       if (!videoStream) return;
 
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      // 【高速化1】画像の長辺を最大1000pxに縮小（画質を保ちつつデータ量を1/10以下へ）
+      const MAX_SIZE = 1000;
+      let width = video.videoWidth || 640;
+      let height = video.videoHeight || 480;
+
+      if (width > height) {
+        if (width > MAX_SIZE) {
+          height = Math.round((height * MAX_SIZE) / width);
+          width = MAX_SIZE;
+        }
+      } else {
+        if (height > MAX_SIZE) {
+          width = Math.round((width * MAX_SIZE) / height);
+          height = MAX_SIZE;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, width, height);
 
       scanBtn.disabled = true;
-      statusEl.textContent = '🧠 Google Gemini AIがレシートを高度解析中...';
+      statusEl.textContent = '⚡ 画像を軽量化してAIへ送信中...';
 
-      // CanvasをBlob（画像ファイル）に変換して送信
+      // 【高速化2】圧縮率を0.7に設定してファイルサイズを数十KB〜百KB程度に抑制
       canvas.toBlob(async (blob) => {
         if (!blob) {
           statusEl.textContent = '❌ 画像のキャプチャに失敗しました';
@@ -179,6 +196,7 @@
         formData.append('file', blob, 'receipt.jpg');
 
         try {
+          statusEl.textContent = '🧠 Google Gemini AIが高速解析中...';
           const res = await fetch('/api/scan-receipt', {
             method: 'POST',
             body: formData
@@ -198,11 +216,11 @@
             if (result.category) document.getElementById('category').value = result.category;
             if (result.memo) document.getElementById('memo').value = result.memo;
 
-            statusEl.textContent = `✅ AI解析成功！(¥${result.amount.toLocaleString()} / ${result.memo || ''}) 入力画面へ移動します...`;
+            statusEl.textContent = `✅ AI解析完了！(¥${result.amount.toLocaleString()} / ${result.memo || ''})`;
 
             setTimeout(() => {
               switchTab('input-tab');
-            }, 1800);
+            }, 1000);
           } else {
             statusEl.textContent = '⚠️ レシートから金額を検出できませんでした。手動で入力してください。';
           }
@@ -212,7 +230,7 @@
         } finally {
           scanBtn.disabled = false;
         }
-      }, 'image/jpeg', 0.85);
+      }, 'image/jpeg', 0.7);
     }
 
     // フォーム保存
