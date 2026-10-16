@@ -2,6 +2,7 @@ import os
 import json
 import time
 import re
+import asyncio
 from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
@@ -51,7 +52,7 @@ class ExpenseDB(Base):
 
 app = FastAPI()
 
-# Gemini クライアントの初期化（起動時に1度だけ生成）
+# Gemini クライアントの初期化（環境変数 GEMINI_API_KEY を使用）
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -131,7 +132,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted successfully"}
 
-# Gemini AI レシート解析API（安定性・トークン上限最適化版）
+# Gemini AI レシート解析API（gemini-3.8-flash 思考オフ & 非同期リトライ最適化版）
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):
     t_start = time.time()
@@ -144,26 +145,29 @@ async def scan_receipt(file: UploadFile = File(...)):
         file_size_kb = len(image_bytes) / 1024
         print(f"⏱️ [ログ] 画像受信完了: {file_size_kb:.1f} KB (受信時間: {t_upload - t_start:.2f}秒)")
 
-        prompt = (
-            "レシート画像から以下を抽出してJSONで出力してください:\n"
-            "amount: 支払合計金額(数値)\n"
-            "date: 日付(YYYY-MM-DD)\n"
-            "category: 食費,日用品,交通費,娯楽,その他\n"
-            "memo: 店舗名"
-        )
+        prompt = "レシート画像から amount, date, category, memo を抽出してください。"
 
         t_ai_start = time.time()
 
-        # max_output_tokens=300 で出力途切れを完全に防ぎます
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=ReceiptParseResult,
-            max_output_tokens=300,
-            temperature=0.0,
-            thinking_config=types.ThinkingConfig(thinking_budget=0)
-        )
+        # 思考レベルをLOWに固定して爆速化
+        try:
+            thinking_config = types.ThinkingConfig(thinking_level="low")
+        except Exception:
+            thinking_config = None
 
-        # 503エラー発生時の自動リトライ付き非同期通信
+        config_args = {
+            "system_instruction": "You are a specialized receipt OCR parser. Always respond ONLY in raw JSON adhering to the schema. Never include greetings, prose, or markdown code blocks.",
+            "response_mime_type": "application/json",
+            "response_schema": ReceiptParseResult,
+            "max_output_tokens": 200,
+            "temperature": 0.0,
+        }
+        if thinking_config:
+            config_args["thinking_config"] = thinking_config
+
+        config = types.GenerateContentConfig(**config_args)
+
+        # 503エラー時の自動リトライ機能
         response = None
         max_retries = 3
         for attempt in range(max_retries):
@@ -179,15 +183,15 @@ async def scan_receipt(file: UploadFile = File(...)):
                 break
             except Exception as e:
                 if ("503" in str(e) or "UNAVAILABLE" in str(e)) and attempt < max_retries - 1:
-                    print(f"⚠️ Gemini 503エラー検知。リトライ中... ({attempt + 1}/{max_retries})")
-                    time.sleep(1)
+                    print(f"⚠️ Gemini 503エラー検知。自動リトライ中... ({attempt + 1}/{max_retries})")
+                    await asyncio.sleep(1)
                     continue
                 raise e
 
         t_ai_end = time.time()
         print(f"⏱️ [ログ] Gemini AI応答時間: {t_ai_end - t_ai_start:.2f}秒 (全体時間: {t_ai_end - t_start:.2f}秒)")
 
-        # 解析結果の抽出処理
+        # レスポンス抽出（parsedオブジェクト）
         result = None
         if hasattr(response, 'parsed') and response.parsed:
             if hasattr(response.parsed, 'model_dump'):
@@ -197,18 +201,20 @@ async def scan_receipt(file: UploadFile = File(...)):
             else:
                 result = response.parsed
 
+        # parsedで取得できない場合の正規表現フォールバック抽出
         if not result and getattr(response, 'text', None):
             raw_text = response.text.strip()
             print(f"📄 [AI生レスポンス]: {raw_text}")
-            cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
-            if cleaned_text:
+            
+            json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if json_match:
                 try:
-                    result = json.loads(cleaned_text)
+                    result = json.loads(json_match.group(0))
                 except Exception as json_err:
                     print(f"⚠️ JSON Parse Error: {json_err}")
 
         if not result:
-            raise ValueError("AIからの応答データが空、または解析不可能な形式です")
+            raise ValueError("AIからの応答データからJSONを抽出できませんでした")
 
         return result
 
