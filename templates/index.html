@@ -6,15 +6,19 @@
     <title>青藍会 決算報告用レシート管理アプリ</title>
     <style>
         body { font-family: sans-serif; padding: 15px; background-color: #f8f9fa; color: #333; margin: 0; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
         h2 { border-bottom: 2px solid #0066cc; padding-bottom: 8px; color: #0066cc; margin-top: 0; }
         
+        /* タブナビゲーション */
+        .tab-nav { display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #0066cc; }
+        .tab-btn { padding: 10px 18px; border: none; background-color: #e9ecef; cursor: pointer; font-size: 15px; font-weight: bold; border-radius: 6px 6px 0 0; color: #495057; }
+        .tab-btn.active { background-color: #0066cc; color: white; }
+
         /* カメラ表示エリア */
-        .camera-section { margin-bottom: 20px; padding: 15px; background: #111; color: #fff; border-radius: 8px; text-align: center; position: relative; }
+        .camera-section { padding: 15px; background: #111; color: #fff; border-radius: 8px; text-align: center; position: relative; }
         .video-wrapper { position: relative; width: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; border-radius: 8px; background: #000; }
         video { width: 100%; height: auto; display: block; }
         
-        /* レシート合わせ枠 */
         .guide-box {
             position: absolute; top: 10%; left: 10%; width: 80%; height: 80%;
             border: 2px dashed #00ffcc; border-radius: 8px; box-sizing: border-box;
@@ -31,14 +35,44 @@
         button.btn-secondary { background-color: #6c757d; }
         
         #status { margin-top: 10px; font-weight: bold; color: #00ffcc; min-height: 24px; }
-        
-        /* テーブル＆決算枠 */
-        .table-responsive { overflow-x: auto; margin-top: 15px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-        th, td { border: 1px solid #d0d7de; padding: 8px; text-align: left; vertical-align: top; }
-        th { background-color: #f0f4f8; font-weight: bold; text-align: center; }
-        .num-col { text-align: center; width: 50px; font-weight: bold; }
-        input[type="text"], input[type="number"] { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+
+        /* 縦軸テーブルレイアウト（縦表示） */
+        .receipt-card {
+            background: #fff;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .vertical-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .vertical-table th {
+            width: 200px;
+            background-color: #f0f4f8;
+            text-align: left;
+            padding: 8px 12px;
+            border: 1px solid #d0d7de;
+            font-size: 13px;
+            font-weight: bold;
+            color: #333;
+        }
+        .vertical-table td {
+            padding: 8px 12px;
+            border: 1px solid #d0d7de;
+        }
+        @media (max-width: 600px) {
+            .vertical-table th, .vertical-table td {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .vertical-table th { background-color: #e6f0fa; }
+        }
+
+        input[type="text"], input[type="number"], select { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         .warning-tag { display: block; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
         
         /* 決算報告まとめ計算ボックス */
@@ -49,6 +83,10 @@
         .refund-text { color: #dc3545; font-size: 18px; }
 
         .action-bar { margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* 手動入力フォーム */
+        .manual-form-group { margin-bottom: 15px; }
+        .manual-form-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
 
         /* A4印刷用レイアウト設定 */
         @media print {
@@ -67,44 +105,38 @@
     <div class="container">
         <h2>青藍会 決算報告用レシート管理</h2>
         
-        <div class="camera-section">
-            <div class="video-wrapper">
-                <video id="video" autoplay playsinline muted></video>
-                <div class="guide-box">
-                    <span class="guide-text">枠内にレシートをかざしてください</span>
-                </div>
-            </div>
-            
-            <div class="controls">
-                <button id="startCamBtn">📷 カメラを起動</button>
-                <button id="manualScanBtn" style="display:none;" class="btn-success">⚡ 今すぐ解析（手動）</button>
-            </div>
-            <div id="status">「カメラを起動」ボタンを押してください</div>
+        <!-- タブナビゲーション -->
+        <div class="tab-nav">
+            <button class="tab-btn active" id="btnTabCamera" onclick="switchTab('camera')">📷 カメラ読み取り</button>
+            <button class="tab-btn" id="btnTabList" onclick="switchTab('list')">📋 支出一覧（決算報告用）</button>
+            <button class="tab-btn" id="btnTabManual" onclick="switchTab('manual')">✍️ 手動入力</button>
         </div>
 
-        <canvas id="canvas" style="display:none;"></canvas>
+        <!-- 1. カメラ読み取りビュー -->
+        <div id="cameraView" class="tab-content">
+            <div class="camera-section">
+                <div class="video-wrapper">
+                    <video id="video" autoplay playsinline muted></video>
+                    <div class="guide-box">
+                        <span class="guide-text">枠内にレシートをかざしてください</span>
+                    </div>
+                </div>
+                
+                <div class="controls">
+                    <button id="startCamBtn">📷 カメラを起動</button>
+                    <button id="manualScanBtn" style="display:none;" class="btn-success">⚡ 今すぐ解析（手動）</button>
+                </div>
+                <div id="status">「カメラを起動」ボタンを押してください</div>
+            </div>
+            <canvas id="canvas" style="display:none;"></canvas>
+        </div>
 
-        <div id="listSection">
-            <h3>支出一覧（決算報告用）</h3>
-            <div class="table-responsive">
-                <table id="receiptTable">
-                    <thead>
-                        <tr>
-                            <th style="width: 50px;">通し番号</th>
-                            <th style="width: 100px;">日付</th>
-                            <th style="width: 130px;">支払先（店舗名）</th>
-                            <th style="width: 120px;">宛名</th>
-                            <th style="width: 130px;">但書（品名など）</th>
-                            <th style="width: 80px;">支払方法</th>
-                            <th style="width: 90px;">金額(円)</th>
-                            <th>ガイドライン不備チェック・警告</th>
-                            <th style="width: 60px;">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="receiptList">
-                        <!-- 動的に追加される行 -->
-                    </tbody>
-                </table>
+        <!-- 2. 支出一覧（決算報告用）ビュー -->
+        <div id="listView" class="tab-content" style="display:none;">
+            <h3>支出一覧（縦軸表示）</h3>
+            
+            <div id="receiptCardsContainer">
+                <!-- 縦軸テーブルカードがここに動的追加されます -->
             </div>
 
             <!-- 補助額と残金の自動計算枠 -->
@@ -126,6 +158,43 @@
                 <button onclick="printA4Sheets()" class="btn-success">🖨️ A4貼り付け台紙の印刷・PDF出力</button>
             </div>
         </div>
+
+        <!-- 3. 手動入力ビュー -->
+        <div id="manualView" class="tab-content" style="display:none;">
+            <h3>手動入力フォーム</h3>
+            <form id="manualForm" style="background: #f0f4f8; padding: 20px; border-radius: 8px; border: 1px solid #d0d7de;">
+                <div class="manual-form-group">
+                    <label for="m_date">日付 (YYYY-MM-DD):</label>
+                    <input type="text" id="m_date" placeholder="例: 2026-06-12" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_store">支払先（店舗名）:</label>
+                    <input type="text" id="m_store" placeholder="例: 〇〇文具店" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_addressee">宛名:</label>
+                    <input type="text" id="m_addressee" placeholder="例: 東邦大学〇〇部" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_proviso">但書（品名など）:</label>
+                    <input type="text" id="m_proviso" placeholder="例: 大会用備品代" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_payment">支払方法:</label>
+                    <select id="m_payment">
+                        <option value="現金">現金</option>
+                        <option value="クレジットカード">クレジットカード</option>
+                        <option value="銀行振込">銀行振込</option>
+                        <option value="その他">その他</option>
+                    </select>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_amount">金額(円):</label>
+                    <input type="number" id="m_amount" placeholder="例: 5000" required>
+                </div>
+                <button type="submit" class="btn-success" style="width: 100%; padding: 12px; font-size: 16px;">＋ 支出一覧に追加</button>
+            </form>
+        </div>
     </div>
 
     <!-- 印刷専用領域 -->
@@ -144,6 +213,24 @@
         let lastFrameData = null;
         let stableCount = 0;
         let receiptData = [];
+
+        // タブ切り替え機能
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+            if (tabName === 'camera') {
+                document.getElementById('cameraView').style.display = 'block';
+                document.getElementById('btnTabCamera').classList.add('active');
+            } else if (tabName === 'list') {
+                document.getElementById('listView').style.display = 'block';
+                document.getElementById('btnTabList').classList.add('active');
+                renderList();
+            } else if (tabName === 'manual') {
+                document.getElementById('manualView').style.display = 'block';
+                document.getElementById('btnTabManual').classList.add('active');
+            }
+        }
 
         // カメラ起動
         startCamBtn.addEventListener('click', async () => {
@@ -231,7 +318,7 @@
 
                     if (data.result) {
                         const parsed = JSON.parse(data.result);
-                        parsed.imageData = imageDataUrl; // 印刷用画像を保持
+                        parsed.imageData = imageDataUrl;
                         addReceiptToList(parsed);
                         status.innerText = "✅ 追加しました！次のレシートをかざせます";
                         
@@ -255,6 +342,29 @@
             }, 'image/jpeg', 0.6);
         }
 
+        // 手動入力フォーム送信イベント
+        document.getElementById('manualForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const item = {
+                date: document.getElementById('m_date').value,
+                store_name: document.getElementById('m_store').value,
+                addressee: document.getElementById('m_addressee').value,
+                proviso: document.getElementById('m_proviso').value,
+                payment_method: document.getElementById('m_payment').value,
+                total_amount: Number(document.getElementById('m_amount').value) || 0,
+                doc_type: '領収書',
+                imageData: '',
+                warnings: []
+            };
+
+            receiptData.push(item);
+            recheckWarnings(receiptData.length - 1);
+            
+            this.reset();
+            alert('支出一覧に追加しました！');
+            switchTab('list');
+        });
+
         function addReceiptToList(parsedItem) {
             receiptData.push({
                 date: parsedItem.date || '',
@@ -267,72 +377,105 @@
                 imageData: parsedItem.imageData || '',
                 warnings: parsedItem.warnings || []
             });
-            renderTable();
         }
 
-        function renderTable() {
-            const tbody = document.getElementById('receiptList');
-            tbody.innerHTML = '';
+        // 縦軸表示レンダリング関数
+        function renderList() {
+            const container = document.getElementById('receiptCardsContainer');
+            container.innerHTML = '';
+
+            if (receiptData.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:30px; color:#666;">データが登録されていません。「カメラ読み取り」または「手動入力」から追加してください。</div>';
+                updateSummary();
+                return;
+            }
 
             receiptData.forEach((item, index) => {
-                const tr = document.createElement('tr');
+                const card = document.createElement('div');
+                card.className = 'receipt-card';
 
-                tr.appendChild(createTd(index + 1, 'num-col'));
-                tr.appendChild(createInputTd(item.date, (v) => { item.date = v; recheckWarnings(index); }));
-                tr.appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
-                tr.appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(index); }));
-                tr.appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(index); }));
-                tr.appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
-                tr.appendChild(createInputTd(item.total_amount, (v) => { 
-                    item.total_amount = Number(v) || 0; 
+                const table = document.createElement('table');
+                table.className = 'vertical-table';
+
+                // 各項目を縦軸に配置
+                table.appendChild(createVerticalRow('通し番号', `① ${index + 1}`));
+                table.appendChild(createVerticalInputRow('日付', item.date, (v) => { item.date = v; recheckWarnings(index); }));
+                table.appendChild(createVerticalInputRow('支払先（店舗名）', item.store_name, (v) => item.store_name = v));
+                table.appendChild(createVerticalInputRow('宛名', item.addressee, (v) => { item.addressee = v; recheckWarnings(index); }));
+                table.appendChild(createVerticalInputRow('但書（品名など）', item.proviso, (v) => { item.proviso = v; recheckWarnings(index); }));
+                table.appendChild(createVerticalInputRow('支払方法', item.payment_method, (v) => item.payment_method = v));
+                table.appendChild(createVerticalInputRow('金額(円)', item.total_amount, (v) => {
+                    item.total_amount = Number(v) || 0;
                     recheckWarnings(index);
-                    updateSummary(); 
+                    updateSummary();
                 }, 'number'));
 
+                // 警告項目
+                const trWarn = document.createElement('tr');
+                const thWarn = document.createElement('th');
+                thWarn.innerText = 'ガイドライン不備チェック・警告';
                 const tdWarn = document.createElement('td');
                 tdWarn.id = `warn-${index}`;
                 renderWarningsTd(tdWarn, item.warnings);
-                tr.appendChild(tdWarn);
+                trWarn.appendChild(thWarn);
+                trWarn.appendChild(tdWarn);
+                table.appendChild(trWarn);
 
+                // 操作項目
+                const trAction = document.createElement('tr');
+                const thAction = document.createElement('th');
+                thAction.innerText = '操作';
                 const tdAction = document.createElement('td');
-                tdAction.style.textAlign = 'center';
                 const delBtn = document.createElement('button');
                 delBtn.innerText = '削除';
                 delBtn.className = 'btn-danger';
                 delBtn.onclick = () => {
                     receiptData.splice(index, 1);
-                    renderTable();
+                    renderList();
                 };
                 tdAction.appendChild(delBtn);
-                tr.appendChild(tdAction);
+                trAction.appendChild(thAction);
+                trAction.appendChild(tdAction);
+                table.appendChild(trAction);
 
-                tbody.appendChild(tr);
+                card.appendChild(table);
+                container.appendChild(card);
             });
 
             updateSummary();
         }
 
-        function createTd(text, className = '') {
+        function createVerticalRow(label, text) {
+            const tr = document.createElement('tr');
+            const th = document.createElement('th');
+            th.innerText = label;
             const td = document.createElement('td');
-            if (className) td.className = className;
             td.innerText = text;
-            return td;
+            td.style.fontWeight = 'bold';
+            tr.appendChild(th);
+            tr.appendChild(td);
+            return tr;
         }
 
-        function createInputTd(value, onChange, type = 'text') {
+        function createVerticalInputRow(label, value, onChange, type = 'text') {
+            const tr = document.createElement('tr');
+            const th = document.createElement('th');
+            th.innerText = label;
             const td = document.createElement('td');
             const input = document.createElement('input');
             input.type = type;
             input.value = value;
             input.onchange = (e) => onChange(e.target.value);
             td.appendChild(input);
-            return td;
+            tr.appendChild(th);
+            tr.appendChild(td);
+            return tr;
         }
 
         function renderWarningsTd(tdElement, warnings) {
             tdElement.innerHTML = '';
             if (!warnings || warnings.length === 0) {
-                tdElement.innerHTML = '<span style="color: green; font-size: 12px;">問題なし</span>';
+                tdElement.innerHTML = '<span style="color: green; font-size: 12px; font-weight: bold;">問題なし</span>';
             } else {
                 warnings.forEach(w => {
                     const tag = document.createElement('span');
@@ -343,7 +486,6 @@
             }
         }
 
-        // フロントエンドでの不備リアルタイムチェック強化
         function recheckWarnings(index) {
             const item = receiptData[index];
             const warnings = [];
@@ -371,7 +513,6 @@
             }
         }
 
-        // 補助金・残金の自動計算
         function updateSummary() {
             let sum = 0;
             receiptData.forEach(item => {
@@ -385,7 +526,7 @@
             document.getElementById('remainingAmount').innerText = remaining.toLocaleString();
         }
 
-        // CSV出力（Excel対応 UTF-8 BOM付き）
+        // CSV出力
         function exportCSV() {
             if (receiptData.length === 0) {
                 alert("出力するデータがありません。");
@@ -408,7 +549,7 @@
             URL.revokeObjectURL(url);
         }
 
-        // A4貼り付け台紙の印刷機能
+        // A4印刷出力
         function printA4Sheets() {
             if (receiptData.length === 0) {
                 alert("印刷するデータがありません。");
@@ -428,7 +569,7 @@
                         <span>東邦大学青藍会 決算報告 証拠書類貼付台紙</span>
                     </div>
                     <div class="a4-body">
-                        ${item.imageData ? `<img src="${item.imageData}" class="a4-img">` : '<p>（画像なし）</p>'}
+                        ${item.imageData ? `<img src="${item.imageData}" class="a4-img">` : '<p>（手動入力データのため画像なし）</p>'}
                     </div>
                     <div class="a4-details">
                         <hr>
