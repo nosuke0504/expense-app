@@ -38,6 +38,34 @@
         
         #status { margin-top: 8px; font-weight: bold; color: #00ffcc; min-height: 20px; font-size: 13px; }
 
+        /* 決算報告書ひな形デザインのフォームヘッダー */
+        .excel-form-header {
+            background-color: #ffffff;
+            border: 2px solid #0066cc;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .excel-title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #0066cc;
+            border-bottom: 1px dashed #0066cc;
+            padding-bottom: 8px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        @media (min-width: 600px) {
+            .form-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .form-item { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: bold; }
+        .form-item label { min-width: 100px; }
+
         /* Excel風 縦軸固定テーブルレイアウト */
         .table-responsive {
             overflow-x: auto;
@@ -63,8 +91,8 @@
             left: 0;
             background-color: #f0f4f8;
             z-index: 2;
-            min-width: 140px;
-            max-width: 150px;
+            min-width: 150px;
+            max-width: 160px;
             box-shadow: 2px 0 5px rgba(0,0,0,0.08);
             font-weight: bold;
             color: #333;
@@ -95,12 +123,8 @@
             flex-direction: column;
             gap: 12px;
         }
-        .summary-inputs { display: flex; flex-direction: column; gap: 8px; font-weight: bold; font-size: 14px; }
-        .summary-inputs-row { display: flex; gap: 10px; flex-wrap: wrap; }
-        .summary-inputs-row div { flex: 1; min-width: 130px; }
-        .summary-inputs input { width: 100%; font-size: 16px; padding: 8px; }
-        .summary-results { font-size: 14px; font-weight: bold; text-align: left; border-top: 1px dashed #b8daff; padding-top: 8px; line-height: 1.6; }
-        .refund-text { color: #dc3545; font-size: 16px; font-weight: bold; display: block; margin-top: 4px; }
+        .summary-results { font-size: 15px; font-weight: bold; text-align: left; line-height: 1.8; }
+        .refund-text { color: #dc3545; font-size: 17px; font-weight: bold; display: block; margin-top: 4px; }
 
         .action-bar { margin-top: 15px; display: flex; flex-direction: column; gap: 10px; }
         .action-bar button { width: 100%; font-size: 14px; }
@@ -111,10 +135,6 @@
         @media (min-width: 768px) {
             h2 { font-size: 22px; text-align: left; }
             .tab-btn { font-size: 15px; padding: 10px 18px; }
-            .summary-box { flex-direction: row; justify-content: space-between; align-items: center; }
-            .summary-inputs { flex-direction: row; align-items: center; }
-            .summary-inputs-row { flex-wrap: nowrap; }
-            .summary-results { text-align: right; border-top: none; padding-top: 0; }
             .action-bar { flex-direction: row; justify-content: flex-end; }
             .action-bar button { width: auto; }
             .excel-vertical-table th.sticky-header { min-width: 180px; font-size: 13px; }
@@ -165,32 +185,44 @@
 
         <!-- 2. 支出一覧（決算報告用）ビュー -->
         <div id="listView" class="tab-content" style="display:none;">
-            <h3>支出一覧（Excel風 縦軸表示）</h3>
+            
+            <!-- ひな形「決算報告」シートフォーム -->
+            <div class="excel-form-header">
+                <div class="excel-title">2026年度 決算報告書</div>
+                <div class="form-grid">
+                    <div class="form-item">
+                        <label for="groupName">団体名:</label>
+                        <input type="text" id="groupName" value="○○部" placeholder="例: サッカー部">
+                    </div>
+                    <div class="form-item">
+                        <label for="authorName">作成者名:</label>
+                        <input type="text" id="authorName" placeholder="例: 東邦 太郎">
+                    </div>
+                    <div class="form-item">
+                        <label for="tel">TEL:</label>
+                        <input type="text" id="tel" placeholder="例: 090-0000-0000">
+                    </div>
+                    <div class="form-item">
+                        <label for="mail">MAIL:</label>
+                        <input type="text" id="mail" placeholder="例: sample@toho-u.ac.jp">
+                    </div>
+                </div>
+            </div>
+
+            <h3>支出一覧表（決算報告用）</h3>
             
             <div id="receiptCardsContainer">
-                <!-- 縦軸固定のExcel風テーブルがここに動的生成されます -->
+                <!-- 決算報告書フォームと同じ構造の縦軸固定テーブルが動的生成されます -->
             </div>
 
             <!-- 補助額と残金の自動計算枠 -->
             <div class="summary-box">
-                <div class="summary-inputs">
-                    <div class="summary-inputs-row">
-                        <div>
-                            <label for="groupName">団体名:</label>
-                            <input type="text" id="groupName" value="○○部" placeholder="例: サッカー部">
-                        </div>
-                        <div>
-                            <label for="authorName">作成者名:</label>
-                            <input type="text" id="authorName" placeholder="例: 東邦太郎">
-                        </div>
-                    </div>
-                    <div>
-                        <label for="subsidyAmount">青藍会補助支給額: ¥</label>
-                        <input type="number" id="subsidyAmount" value="0" min="0" onchange="updateSummary()" oninput="updateSummary()">
-                    </div>
+                <div class="form-item" style="max-width: 300px;">
+                    <label for="subsidyAmount" style="min-width: 110px;">補助支給額: ¥</label>
+                    <input type="number" id="subsidyAmount" value="0" min="0" onchange="updateSummary()" oninput="updateSummary()">
                 </div>
                 <div class="summary-results">
-                    合計件数: <span id="totalCount">0</span> 件 | 
+                    件数: <span id="totalCount">0</span> 件 | 
                     支出合計額: ¥<span id="totalSum">0</span><br>
                     <span class="refund-text">残金（返金額）: ¥<span id="remainingAmount">0</span></span>
                 </div>
@@ -209,20 +241,24 @@
             <h3>手動入力フォーム</h3>
             <form id="manualForm" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #d0d7de;">
                 <div class="manual-form-group">
-                    <label for="m_date">日付 (YYYY-MM-DD):</label>
+                    <label for="m_date">支払年月日 (YYYY-MM-DD):</label>
                     <input type="text" id="m_date" placeholder="例: 2026-06-12" required>
                 </div>
                 <div class="manual-form-group">
-                    <label for="m_store">支払先（店舗名）:</label>
-                    <input type="text" id="m_store" placeholder="例: 〇〇文具店" required>
+                    <label for="m_proviso">摘要（但書・品名など）:</label>
+                    <input type="text" id="m_proviso" placeholder="例: 大会用備品代" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_amount">支出金額(円):</label>
+                    <input type="number" id="m_amount" placeholder="例: 5000" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="m_store">備考（購入目的・店舗名など）:</label>
+                    <input type="text" id="m_store" placeholder="例: 〇〇文具店 / ○○大会用">
                 </div>
                 <div class="manual-form-group">
                     <label for="m_addressee">宛名:</label>
-                    <input type="text" id="m_addressee" placeholder="例: 東邦大学〇〇部" required>
-                </div>
-                <div class="manual-form-group">
-                    <label for="m_proviso">但書（品名など）:</label>
-                    <input type="text" id="m_proviso" placeholder="例: 大会用備品代" required>
+                    <input type="text" id="m_addressee" placeholder="例: 東邦大学〇〇部" value="東邦大学○○部">
                 </div>
                 <div class="manual-form-group">
                     <label for="m_payment">支払方法:</label>
@@ -233,11 +269,7 @@
                         <option value="その他">その他</option>
                     </select>
                 </div>
-                <div class="manual-form-group">
-                    <label for="m_amount">金額(円):</label>
-                    <input type="number" id="m_amount" placeholder="例: 5000" required>
-                </div>
-                <button type="submit" class="btn-success" style="width: 100%; padding: 12px; font-size: 16px; margin-top: 5px;">＋ 支出一覧に追加</button>
+                <button type="submit" class="btn-success" style="width: 100%; padding: 12px; font-size: 16px; margin-top: 5px;">＋ 決算報告書に追加</button>
             </form>
         </div>
     </div>
@@ -406,7 +438,7 @@
             recheckWarnings(receiptData.length - 1);
             
             this.reset();
-            alert('支出一覧に追加しました！');
+            alert('決算報告書に追加しました！');
             switchTab('list');
         });
 
@@ -424,7 +456,7 @@
             });
         }
 
-        // Excel風 縦軸固定レンダリング関数
+        // 決算報告書ひな形と完全に一致する縦軸固定レンダリング関数
         function renderList() {
             const container = document.getElementById('receiptCardsContainer');
             container.innerHTML = '';
@@ -439,13 +471,13 @@
             table.className = 'excel-vertical-table';
 
             const labels = [
-                '通し番号',
-                '日付',
-                '支払先（店舗名）',
+                '領収書No.',
+                '支払年月日',
+                '摘要（但書・品名など）',
+                '支出金額(円)',
+                '備考（購入の目的・店舗名）',
                 '宛名',
-                '但書（品名など）',
                 '支払方法',
-                '金額(円)',
                 'ガイドライン不備チェック・警告',
                 '操作'
             ];
@@ -460,30 +492,44 @@
             });
 
             receiptData.forEach((item, index) => {
+                // 0: 領収書No.
                 const td0 = document.createElement('td');
-                td0.innerText = `① ${index + 1}`;
+                td0.innerText = `${index + 1}`;
                 td0.style.fontWeight = 'bold';
                 td0.style.textAlign = 'center';
                 td0.style.backgroundColor = '#f8f9fa';
                 rows[0].appendChild(td0);
 
+                // 1: 支払年月日
                 rows[1].appendChild(createInputTd(item.date, (v) => { item.date = v; recheckWarnings(index); }));
-                rows[2].appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
-                rows[3].appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(index); }));
-                rows[4].appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(index); }));
-                rows[5].appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
-                rows[6].appendChild(createInputTd(item.total_amount, (v) => {
+
+                // 2: 摘要（但書）
+                rows[2].appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(index); }));
+
+                // 3: 支出金額(円)
+                rows[3].appendChild(createInputTd(item.total_amount, (v) => {
                     item.total_amount = Number(v) || 0;
                     recheckWarnings(index);
                     updateSummary();
                 }, 'number'));
 
+                // 4: 備考（購入目的・店舗名）
+                rows[4].appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
+
+                // 5: 宛名
+                rows[5].appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(index); }));
+
+                // 6: 支払方法
+                rows[6].appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
+
+                // 7: ガイドライン不備チェック・警告
                 const tdWarn = document.createElement('td');
                 tdWarn.id = `warn-${index}`;
                 tdWarn.style.minWidth = '200px';
                 renderWarningsTd(tdWarn, item.warnings);
                 rows[7].appendChild(tdWarn);
 
+                // 8: 操作
                 const tdAction = document.createElement('td');
                 tdAction.style.textAlign = 'center';
                 const delBtn = document.createElement('button');
@@ -584,7 +630,9 @@
                 receipts: receiptData,
                 subsidy: Number(document.getElementById('subsidyAmount').value) || 0,
                 group_name: document.getElementById('groupName').value || '○○部',
-                author_name: document.getElementById('authorName').value || ''
+                author_name: document.getElementById('authorName').value || '',
+                tel: document.getElementById('tel').value || '',
+                mail: document.getElementById('mail').value || ''
             };
 
             try {
@@ -620,11 +668,11 @@
                 return;
             }
 
-            let csvContent = "\uFEFF通し番号,日付,支払先,宛名,但書,支払方法,金額(円),不備チェック警告\n";
+            let csvContent = "\uFEFF領収書No.,支払年月日,摘要,支出金額(円),備考（店舗名/目的）,宛名,支払方法,不備チェック警告\n";
 
             receiptData.forEach((item, index) => {
                 const warnText = item.warnings.join(' / ').replace(/"/g, '""');
-                csvContent += `"${index + 1}","${item.date}","${item.store_name}","${item.addressee}","${item.proviso}","${item.payment_method}","${item.total_amount}","${warnText}"\n`;
+                csvContent += `"${index + 1}","${item.date}","${item.proviso}","${item.total_amount}","${item.store_name}","${item.addressee}","${item.payment_method}","${warnText}"\n`;
             });
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -652,7 +700,7 @@
 
                 sheet.innerHTML = `
                     <div class="a4-header">
-                        <span>通し番号: ① ${index + 1}</span>
+                        <span>領収書No.: ${index + 1}</span>
                         <span>東邦大学青藍会 決算報告 証拠書類貼付台紙</span>
                     </div>
                     <div class="a4-body">
@@ -661,8 +709,8 @@
                     <div class="a4-details">
                         <hr>
                         <strong>【記載内容確認】</strong><br>
-                        日付: ${item.date} | 金額: ¥${Number(item.total_amount).toLocaleString()} | 支払先: ${item.store_name}<br>
-                        宛名: ${item.addressee} | 但書: ${item.proviso} | 支払方法: ${item.payment_method}<br>
+                        支払年月日: ${item.date} | 支出金額: ¥${Number(item.total_amount).toLocaleString()} | 摘要: ${item.proviso}<br>
+                        備考/支払先: ${item.store_name} | 宛名: ${item.addressee} | 支払方法: ${item.payment_method}<br>
                         ${item.warnings.length > 0 ? `<span style="color:red;">⚠️ 注意事項: ${item.warnings.join(', ')}</span>` : ''}
                     </div>
                 `;

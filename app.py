@@ -42,7 +42,7 @@ def upload():
             "- date: 発行日または注文日 (YYYY-MM-DD形式)\n"
             "- store_name: 支払先・店舗名\n"
             "- addressee: 宛名（「東邦大学〇〇部」、「個人名」、「記載なし」など）\n"
-            "- proviso: 但書（例: 「○○購入代」、「品代」など）\n"
+            "- proviso: 但書・摘要（例: 「○○購入代」、「品代」など）\n"
             "- total_amount: 合計金額（数値のみ）\n"
             "- payment_method: 支払方法（「現金」、「クレジットカード」、「不明」など）\n"
             "- doc_type: 書類種別（「領収書」、「請求書」、「納品書」、「注文書」、「受領書」など）\n"
@@ -79,8 +79,14 @@ def export_excel():
         subsidy = data.get('subsidy', 0)
         group_name = data.get('group_name', '○○部')
         author_name = data.get('author_name', '')
+        tel = data.get('tel', '')
+        mail = data.get('mail', '')
 
+        # ひな形ファイルの選択
         template_filename = '学生団体（各部活動）202506.xlsx'
+        if not os.path.exists(template_filename):
+            template_filename = '学生団体（各部活動）202506_2.xlsx'
+
         if not os.path.exists(template_filename):
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -89,15 +95,16 @@ def export_excel():
             wb = openpyxl.load_workbook(template_filename)
             ws = wb['決算報告'] if '決算報告' in wb.sheetnames else wb.active
 
-        # 背景色を白一色に設定するためのスタイル
         white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
 
-        # 1. ヘッダー基本情報の書き込み
-        ws.cell(row=2, column=5, value=group_name)  # 団体名 (E2)
-        ws.cell(row=3, column=5, value=author_name) # 作成者名 (E3)
-        ws.cell(row=7, column=5, value=subsidy)     # 補助支給額 (E7)
+        # 1. 決算報告書ヘッダー情報の書き込み (ひな形のセル配置に準拠)
+        ws.cell(row=2, column=5, value=group_name)   # 団体名 (E2)
+        ws.cell(row=3, column=5, value=author_name)  # 作成者名 (E3)
+        ws.cell(row=4, column=5, value=tel)          # TEL (E4)
+        ws.cell(row=5, column=5, value=mail)         # MAIL (E5)
+        ws.cell(row=7, column=5, value=subsidy)      # 補助支給額 (E7)
 
-        # 2. 支出明細の書き込み (14行目から開始)
+        # 2. 支出明細の書き込み (14行目から順次記録)
         start_row = 14
         for i, item in enumerate(receipts):
             r = start_row + i
@@ -107,13 +114,16 @@ def export_excel():
             except (ValueError, TypeError):
                 amt = 0
 
-            ws.cell(row=r, column=2, value=i + 1)                      # 通し番号 (B列)
-            ws.cell(row=r, column=3, value=item.get('date', ''))        # 支払年月日 (C列)
-            ws.cell(row=r, column=4, value=item.get('proviso', ''))     # 摘要/但書 (D列)
-            ws.cell(row=r, column=5, value=amt)                        # 支出金額 (E列)
-            ws.cell(row=r, column=6, value=item.get('store_name', ''))  # 備考 (F列)
+            ws.cell(row=r, column=2, value=i + 1)                        # 領収書No. (B列)
+            ws.cell(row=r, column=3, value=item.get('date', ''))          # 支払年月日 (C列)
+            ws.cell(row=r, column=4, value=item.get('proviso', ''))       # 摘要 (D列)
+            ws.cell(row=r, column=5, value=amt)                          # 支出金額 (E列)
+            
+            # 備考（店舗名および補足事項）
+            store = item.get('store_name', '')
+            ws.cell(row=r, column=6, value=store)                        # 備考（購入の目的）(F列)
 
-        # 3. 全セルの背景色を白一色に変更
+        # 3. 全セルの背景色を白一色に設定
         for row in ws.iter_rows(min_row=1, max_row=max(100, start_row + len(receipts) + 5), min_col=1, max_col=10):
             for cell in row:
                 cell.fill = white_fill
