@@ -6,3 +6,4 @@ pydantic
 google-genai
 python-multipart
 google-cloud-vision
+google-generativeai
