@@ -20,17 +20,20 @@ def upload():
     
     file = request.files['file']
     
-    # 画像データを読み込み
-    image = Image.open(io.BytesIO(file.read()))
+    try:
+        # 画像データを読み込み
+        image = Image.open(io.BytesIO(file.read()))
 
-    # Gemini APIで画像から情報を抽出
-    prompt = "このレシート画像から「日付」「店舗名」「合計金額」を正確に抽出し、見やすいJSON形式で回答してください。"
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=[image, prompt]
-    )
+        # 最新モデル gemini-3.8-flash を指定
+        prompt = "このレシート画像から「日付」「店舗名」「合計金額」を正確に抽出し、見やすいJSON形式で回答してください。"
+        response = client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=[image, prompt]
+        )
 
-    return f"<h3>解析結果:</h3><pre>{response.text}</pre><br><a href='/'>再度撮影する</a>"
+        return f"<h3>解析結果:</h3><pre>{response.text}</pre><br><a href='/'>再度撮影する</a>"
+    except Exception as e:
+        return f"エラーが発生しました: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
