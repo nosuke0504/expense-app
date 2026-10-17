@@ -831,6 +831,7 @@
             recheckWarnings(receiptData.length - 1);
 
             closePreviewModal();
+            exportToGoogleSheets(true);
             alert('修正した内容で決算報告書に追加・記録しました！');
             switchTab('list');
         });
@@ -853,6 +854,7 @@
             recheckWarnings(receiptData.length - 1);
             
             this.reset();
+            exportToGoogleSheets(true);
             alert('決算報告書に追加しました！');
             switchTab('list');
         });
@@ -932,21 +934,37 @@
                     item.date = formatDateMDY(v);
                     recheckWarnings(originalIndex);
                     renderList();
+                    exportToGoogleSheets(true);
                 }));
 
-                rows[2].appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(originalIndex); }));
+                rows[2].appendChild(createInputTd(item.proviso, (v) => {
+                    item.proviso = v;
+                    recheckWarnings(originalIndex);
+                    exportToGoogleSheets(true);
+                }));
 
                 rows[3].appendChild(createInputTd(item.total_amount, (v) => {
                     item.total_amount = Number(v) || 0;
                     recheckWarnings(originalIndex);
                     updateSummary();
+                    exportToGoogleSheets(true);
                 }, 'number'));
 
-                rows[4].appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
+                rows[4].appendChild(createInputTd(item.store_name, (v) => {
+                    item.store_name = v;
+                    exportToGoogleSheets(true);
+                }));
 
-                rows[5].appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(originalIndex); }));
+                rows[5].appendChild(createInputTd(item.addressee, (v) => {
+                    item.addressee = v;
+                    recheckWarnings(originalIndex);
+                    exportToGoogleSheets(true);
+                }));
 
-                rows[6].appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
+                rows[6].appendChild(createInputTd(item.payment_method, (v) => {
+                    item.payment_method = v;
+                    exportToGoogleSheets(true);
+                }));
 
                 const tdWarn = document.createElement('td');
                 tdWarn.id = `warn-${originalIndex}`;
@@ -962,6 +980,7 @@
                 delBtn.onclick = () => {
                     receiptData.splice(originalIndex, 1);
                     renderList();
+                    exportToGoogleSheets(true);
                 };
                 tdAction.appendChild(delBtn);
                 rows[8].appendChild(tdAction);
@@ -1045,16 +1064,18 @@
         }
 
         // Googleスプレッドシートへの一括同期・保存処理
-        async function exportToGoogleSheets() {
-            if (receiptData.length === 0) {
+        async function exportToGoogleSheets(isSilent = false) {
+            if (receiptData.length === 0 && !isSilent) {
                 alert("送信するデータがありません。");
                 return;
             }
 
             const gasUrl = document.getElementById('gasUrl').value.trim();
             if (!gasUrl) {
-                alert("Googleスプレッドシート連携用のGAS WebアプリURLを入力してください。");
-                document.getElementById('gasUrl').focus();
+                if (!isSilent) {
+                    alert("Googleスプレッドシート連携用のGAS WebアプリURLを入力してください。");
+                    document.getElementById('gasUrl').focus();
+                }
                 return;
             }
 
@@ -1071,9 +1092,13 @@
                     body: JSON.stringify(payload)
                 });
 
-                alert("Googleスプレッドシートへデータを保存・同期しました！スマホ・PC間で共有されます。");
+                if (!isSilent) {
+                    alert("Googleスプレッドシートへデータを保存・同期しました！スマホ・PC間で共有されます。");
+                }
             } catch (err) {
-                alert("スプレッドシートへの送信時に通信エラーが発生しました。URLをご確認ください。");
+                if (!isSilent) {
+                    alert("スプレッドシートへの送信時に通信エラーが発生しました。URLをご確認ください。");
+                }
                 console.error(err);
             }
         }
