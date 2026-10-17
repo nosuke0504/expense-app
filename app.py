@@ -14,7 +14,6 @@ def index():
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
-    # ページを直接リロードした場合はトップへ戻す（405エラー防止）
     if request.method == 'GET':
         return redirect(url_for('index'))
     
@@ -26,14 +25,20 @@ def upload():
         return "ファイルが選択されていません", 400
     
     try:
-        # 画像を読み込み、縦横最大1024pxに縮小して処理を高速化
-        image = Image.open(io.BytesIO(file.read()))
-        image.thumbnail((1024, 1024))
+        # 1. 画像処理：800pxまで小さくし、JPEG圧縮で通信量を激減させる
+        image = Image.open(io.BytesIO(file.read())).convert('RGB')
+        image.thumbnail((800, 800))
+        
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=75)
+        buffer.seek(0)
+        compressed_image = Image.open(buffer)
 
-        prompt = "このレシート画像から「日付」「店舗名」「合計金額」を正確に抽出し、見やすいJSON形式で回答してください。"
+        # 2. AI処理：必要な項目だけを即答させるプロンプト
+        prompt = "レシート画像から「日付」「店舗名」「合計金額」を読み取り、JSON形式のみで出力してください。"
         response = client.models.generate_content(
             model='gemini-3.8-flash',
-            contents=[image, prompt]
+            contents=[compressed_image, prompt]
         )
 
         return f"<h3>解析結果:</h3><pre>{response.text}</pre><br><a href='/'>再度撮影する</a>"
