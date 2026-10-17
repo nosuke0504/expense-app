@@ -3,72 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>レシート連続記録アプリ</title>
+    <title>レシート記録アプリ</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; background-color: #f8f9fa; color: #333; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px; }
-        h2 { font-size: 1.2rem; margin-top: 0; color: #1a73e8; }
-        label { display: block; margin-top: 12px; font-weight: bold; font-size: 0.9rem; color: #555; }
-        input[type="text"], input[type="number"] { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
-        .btn-camera { display: block; width: 100%; text-align: center; background: #1a73e8; color: white; padding: 14px 0; border-radius: 8px; font-size: 1.1rem; font-weight: bold; text-decoration: none; cursor: pointer; }
-        .btn-save { width: 100%; background: #34a853; color: white; padding: 12px 0; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; margin-top: 20px; cursor: pointer; }
-        .btn-save:disabled { background: #ccc; }
-        #fileInput { display: none; }
-        #status { text-align: center; font-weight: bold; margin: 12px 0; color: #1a73e8; }
-        #successMsg { display: none; background: #e6f4ea; color: #137333; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 12px; }
+        body { font-family: sans-serif; padding: 20px; }
+        #resultBox { margin-top: 15px; padding: 12px; background: #f0f4f8; border-radius: 8px; border: 1px solid #d0d7de; }
     </style>
 </head>
 <body>
+    <h2>レシートを撮影・送信</h2>
+    <form id="uploadForm">
+        <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" required>
+        <br><br>
+        <button type="submit" id="submitBtn">解析して記録</button>
+    </form>
 
-    <div class="card">
-        <h2>📷 レシート撮影</h2>
-        <!-- カメラ起動ボタン -->
-        <label for="fileInput" class="btn-camera" id="cameraLabel">レシートを撮影する</label>
-        <input type="file" id="fileInput" accept="image/*" capture="environment">
-        
-        <div id="status"></div>
+    <div id="status" style="margin-top: 15px; font-weight: bold; color: #0066cc;"></div>
+
+    <div id="resultBox" style="display:none;">
+        <h3>解析結果:</h3>
+        <pre id="jsonOutput" style="white-space: pre-wrap; word-break: break-all;"></pre>
     </div>
-
-    <!-- 解析結果・修正フォーム -->
-    <div class="card" id="formCard" style="display: none;">
-        <h2>✏️ 内容の確認・修正</h2>
-        <form id="saveForm">
-            <label for="dateInput">日付</label>
-            <input type="text" id="dateInput" name="date" placeholder="2026-10-17" required>
-
-            <label for="storeInput">店舗名</label>
-            <input type="text" id="storeInput" name="store_name" placeholder="セブン-イレブン" required>
-
-            <label for="amountInput">合計金額 (円)</label>
-            <input type="number" id="amountInput" name="total_amount" placeholder="1280" required>
-
-            <button type="submit" class="btn-save" id="saveBtn">この内容で保存する</button>
-        </form>
-    </div>
-
-    <div id="successMsg"></div>
 
     <script>
-        const fileInput = document.getElementById('fileInput');
-        const status = document.getElementById('status');
-        const formCard = document.getElementById('formCard');
-        const successMsg = document.getElementById('successMsg');
-        const cameraLabel = document.getElementById('cameraLabel');
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileInput');
+            const status = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            const resultBox = document.getElementById('resultBox');
+            const jsonOutput = document.getElementById('jsonOutput');
 
-        // 1. カメラで撮影（ファイル選択）したら自動で解析を開始
-        fileInput.addEventListener('change', async function() {
             if (!fileInput.files[0]) return;
 
-            status.innerText = "⚡ 撮影画像を自動解析中...";
-            formCard.style.display = 'none';
-            successMsg.style.display = 'none';
-            cameraLabel.style.opacity = '0.5';
+            submitBtn.disabled = true;
+            resultBox.style.display = 'none';
+            status.innerText = "⚡ 解析中...";
 
             const startTime = Date.now();
             const file = fileInput.files[0];
             
-            // 超高速圧縮 (長辺600px, 画質0.55)
-            const resizedBlob = await resizeImage(file, 600, 0.55);
+            // 長辺500px, 画質0.5まで極限圧縮（データ量を約10〜20KBにする）
+            const resizedBlob = await resizeImage(file, 500, 0.5);
 
             const formData = new FormData();
             formData.append('file', resizedBlob, 'receipt.jpg');
@@ -79,64 +54,26 @@
                     body: formData
                 });
                 const data = await response.json();
+                
+                // 処理にかかった秒数を計算
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-                if (data.success) {
-                    // 解析結果を各フォーム要素に自動代入
-                    document.getElementById('dateInput').value = data.data.date || '';
-                    document.getElementById('storeInput').value = data.data.store_name || '';
-                    document.getElementById('amountInput').value = data.data.total_amount || '';
-
-                    formCard.style.display = 'block';
-                    status.innerText = `✅ 解析完了 (${elapsed}秒) - 内容を確認してください`;
+                
+                if (data.result) {
+                    jsonOutput.innerText = data.result;
+                    resultBox.style.display = 'block';
+                    status.innerText = `✅ 完了 (${elapsed}秒)`;
                 } else {
-                    status.innerText = "❌ 解析エラー: " + (data.error || "読み取れませんでした");
+                    status.innerText = "エラー: " + (data.error || "解析失敗");
                 }
             } catch (err) {
                 status.innerText = "通信エラーが発生しました";
             } finally {
-                cameraLabel.style.opacity = '1';
-                fileInput.value = ''; // 次の撮影用にクリア
+                submitBtn.disabled = false;
             }
         });
 
-        // 2. 確認・修正後に「保存する」ボタンを押したときの処理
-        document.getElementById('saveForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const saveBtn = document.getElementById('saveBtn');
-            saveBtn.disabled = true;
-
-            const payload = {
-                date: document.getElementById('dateInput').value,
-                store_name: document.getElementById('storeInput').value,
-                total_amount: document.getElementById('amountInput').value
-            };
-
-            try {
-                const response = await fetch('/save', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const res = await response.json();
-
-                if (res.success) {
-                    formCard.style.display = 'none';
-                    status.innerText = "";
-                    successMsg.innerText = "🎉 保存が完了しました！";
-                    successMsg.style.display = 'block';
-                } else {
-                    alert("保存に失敗しました");
-                }
-            } catch (err) {
-                alert("通信エラーが発生しました");
-            } finally {
-                saveBtn.disabled = false;
-            }
-        });
-
-        // 画像高速圧縮関数
-        function resizeImage(file, maxDimension, quality) {
+        // 高速圧縮関数
+        function resizeImage(file, maxWidth, quality) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
@@ -145,16 +82,9 @@
                         let width = img.width;
                         let height = img.height;
 
-                        if (width > height) {
-                            if (width > maxDimension) {
-                                height = Math.round((height * maxDimension) / width);
-                                width = maxDimension;
-                            }
-                        } else {
-                            if (height > maxDimension) {
-                                width = Math.round((width * maxDimension) / height);
-                                height = maxDimension;
-                            }
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
                         }
 
                         const canvas = document.createElement('canvas');
@@ -163,7 +93,9 @@
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+                        canvas.toBlob((blob) => {
+                            resolve(blob);
+                        }, 'image/jpeg', quality);
                     };
                     img.src = e.target.result;
                 };
