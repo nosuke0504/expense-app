@@ -5,7 +5,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 import openpyxl
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, Border, Side
 
 app = Flask(__name__)
 
@@ -82,7 +82,7 @@ def export_excel():
         tel = data.get('tel', '')
         mail = data.get('mail', '')
 
-        # ひな形ファイルの選択
+        # ひな形テンプレートの読み込み
         template_filename = '学生団体（各部活動）202506.xlsx'
         if not os.path.exists(template_filename):
             template_filename = '学生団体（各部活動）202506_2.xlsx'
@@ -95,16 +95,41 @@ def export_excel():
             wb = openpyxl.load_workbook(template_filename)
             ws = wb['決算報告'] if '決算報告' in wb.sheetnames else wb.active
 
+        # 目盛線（グリッド線）を表示
+        if ws.views.sheetView:
+            ws.views.sheetView[0].showGridLines = True
+
         white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
 
-        # 1. 決算報告書ヘッダー情報の書き込み (ひな形のセル配置に準拠)
-        ws.cell(row=2, column=5, value=group_name)   # 団体名 (E2)
-        ws.cell(row=3, column=5, value=author_name)  # 作成者名 (E3)
-        ws.cell(row=4, column=5, value=tel)          # TEL (E4)
-        ws.cell(row=5, column=5, value=mail)         # MAIL (E5)
-        ws.cell(row=7, column=5, value=subsidy)      # 補助支給額 (E7)
+        # 1. ひな形の正解位置へ書き込み（既存のラベルを消さない）
+        ws.cell(row=2, column=5, value=group_name)   # E2: 団体名
+        ws.cell(row=2, column=5).fill = white_fill
 
-        # 2. 支出明細の書き込み (14行目から順次記録)
+        ws.cell(row=3, column=6, value=author_name)  # F3: 作成者名 (E3は「作成者名」ラベル)
+        ws.cell(row=3, column=6).fill = white_fill
+
+        ws.cell(row=4, column=6, value=tel)          # F4: TEL (E4は「TEL」ラベル)
+        ws.cell(row=4, column=6).fill = white_fill
+
+        ws.cell(row=5, column=6, value=mail)         # F5: MAIL (E5は「MAIL」ラベル)
+        ws.cell(row=5, column=6).fill = white_fill
+
+        try:
+            subsidy_val = float(subsidy)
+        except (ValueError, TypeError):
+            subsidy_val = 0
+        ws.cell(row=7, column=5, value=subsidy_val)  # E7: 補助支給額
+        ws.cell(row=7, column=5).fill = white_fill
+
+        # 2. テンプレートにあらかじめ入っているサンプルデータ（14行目以降）をクリア
+        max_clear_row = max(248, 14 + len(receipts))
+        for r in range(14, max_clear_row):
+            for c in range(2, 7):
+                cell = ws.cell(row=r, column=c)
+                cell.value = None
+                cell.fill = white_fill
+
+        # 3. 支出明細の書き込み (14行目から開始)
         start_row = 14
         for i, item in enumerate(receipts):
             r = start_row + i
@@ -114,19 +139,26 @@ def export_excel():
             except (ValueError, TypeError):
                 amt = 0
 
-            ws.cell(row=r, column=2, value=i + 1)                        # 領収書No. (B列)
-            ws.cell(row=r, column=3, value=item.get('date', ''))          # 支払年月日 (C列)
-            ws.cell(row=r, column=4, value=item.get('proviso', ''))       # 摘要 (D列)
-            ws.cell(row=r, column=5, value=amt)                          # 支出金額 (E列)
+            ws.cell(row=r, column=2, value=i + 1)                       # B列: 領収書No.
+            ws.cell(row=r, column=3, value=item.get('date', ''))         # C列: 支払年月日
+            ws.cell(row=r, column=4, value=item.get('proviso', ''))      # D列: 摘要
+            ws.cell(row=r, column=5, value=amt)                         # E列: 支出金額
             
-            # 備考（店舗名および補足事項）
-            store = item.get('store_name', '')
-            ws.cell(row=r, column=6, value=store)                        # 備考（購入の目的）(F列)
+            store_note = item.get('store_name', '')
+            ws.cell(row=r, column=6, value=store_note)                 # F列: 備考（店舗名/購入目的）
 
-        # 3. 全セルの背景色を白一色に設定
-        for row in ws.iter_rows(min_row=1, max_row=max(100, start_row + len(receipts) + 5), min_col=1, max_col=10):
-            for cell in row:
+            for col_idx in range(2, 7):
+                cell = ws.cell(row=r, column=col_idx)
                 cell.fill = white_fill
+                # 罫線が未設定の場合は細罫線を補填
+                if not cell.border or not (cell.border.top.style or cell.border.bottom.style):
+                    thin_border = Border(
+                        left=Side(style='thin', color='D0D7DE'),
+                        right=Side(style='thin', color='D0D7DE'),
+                        top=Side(style='thin', color='D0D7DE'),
+                        bottom=Side(style='thin', color='D0D7DE')
+                    )
+                    cell.border = thin_border
 
         output = io.BytesIO()
         wb.save(output)
