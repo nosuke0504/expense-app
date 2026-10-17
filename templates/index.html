@@ -456,6 +456,24 @@
             });
         }
 
+        // 日付の古い順（昇順）にソートして1からの自動採番（領収書No.）を行う関数
+        function getNumberedReceipts() {
+            let sorted = receiptData.map((item, originalIndex) => ({ item, originalIndex }));
+            sorted.sort((a, b) => {
+                const da = a.item.date || '9999-99-99';
+                const db = b.item.date || '9999-99-99';
+                if (da < db) return -1;
+                if (da > db) return 1;
+                return a.originalIndex - b.originalIndex;
+            });
+
+            sorted.forEach((entry, idx) => {
+                entry.item.number = idx + 1;
+            });
+
+            return sorted.map(e => e.item);
+        }
+
         // 決算報告書ひな形と完全に一致する縦軸固定レンダリング関数
         function renderList() {
             const container = document.getElementById('receiptCardsContainer');
@@ -466,6 +484,18 @@
                 updateSummary();
                 return;
             }
+
+            // 古い順で領収書No.を1から再自動採番
+            getNumberedReceipts();
+
+            // 画面の「支出一覧」では日付の新しい順（降順）に並び替えて表示
+            let displayItems = [...receiptData].sort((a, b) => {
+                const da = a.date || '0000-00-00';
+                const db = b.date || '0000-00-00';
+                if (da > db) return -1;
+                if (da < db) return 1;
+                return (b.number || 0) - (a.number || 0);
+            });
 
             const table = document.createElement('table');
             table.className = 'excel-vertical-table';
@@ -491,25 +521,31 @@
                 return tr;
             });
 
-            receiptData.forEach((item, index) => {
-                // 0: 領収書No.
+            displayItems.forEach((item) => {
+                const originalIndex = receiptData.indexOf(item);
+
+                // 0: 領収書No. (日付の古い順に割り当てられた番号)
                 const td0 = document.createElement('td');
-                td0.innerText = `${index + 1}`;
+                td0.innerText = `${item.number}`;
                 td0.style.fontWeight = 'bold';
                 td0.style.textAlign = 'center';
                 td0.style.backgroundColor = '#f8f9fa';
                 rows[0].appendChild(td0);
 
                 // 1: 支払年月日
-                rows[1].appendChild(createInputTd(item.date, (v) => { item.date = v; recheckWarnings(index); }));
+                rows[1].appendChild(createInputTd(item.date, (v) => {
+                    item.date = v;
+                    recheckWarnings(originalIndex);
+                    renderList(); // 日付変更で採番・並び順を自動更新
+                }));
 
                 // 2: 摘要（但書）
-                rows[2].appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(index); }));
+                rows[2].appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(originalIndex); }));
 
                 // 3: 支出金額(円)
                 rows[3].appendChild(createInputTd(item.total_amount, (v) => {
                     item.total_amount = Number(v) || 0;
-                    recheckWarnings(index);
+                    recheckWarnings(originalIndex);
                     updateSummary();
                 }, 'number'));
 
@@ -517,14 +553,14 @@
                 rows[4].appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
 
                 // 5: 宛名
-                rows[5].appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(index); }));
+                rows[5].appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(originalIndex); }));
 
                 // 6: 支払方法
                 rows[6].appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
 
                 // 7: ガイドライン不備チェック・警告
                 const tdWarn = document.createElement('td');
-                tdWarn.id = `warn-${index}`;
+                tdWarn.id = `warn-${originalIndex}`;
                 tdWarn.style.minWidth = '200px';
                 renderWarningsTd(tdWarn, item.warnings);
                 rows[7].appendChild(tdWarn);
@@ -536,7 +572,7 @@
                 delBtn.innerText = '削除';
                 delBtn.className = 'btn-danger';
                 delBtn.onclick = () => {
-                    receiptData.splice(index, 1);
+                    receiptData.splice(originalIndex, 1);
                     renderList();
                 };
                 tdAction.appendChild(delBtn);
@@ -581,6 +617,7 @@
 
         function recheckWarnings(index) {
             const item = receiptData[index];
+            if (!item) return;
             const warnings = [];
 
             if (!item.addressee || !item.addressee.includes('東邦大学')) {
@@ -619,15 +656,17 @@
             document.getElementById('remainingAmount').innerText = remaining.toLocaleString();
         }
 
-        // ひな形Excel (.xlsx) 出力機能
+        // ひな形Excel (.xlsx) 出力機能（番号の若い順・日付の古い順で送信）
         async function exportExcel() {
             if (receiptData.length === 0) {
                 alert("出力するデータがありません。");
                 return;
             }
 
+            const sortedReceipts = getNumberedReceipts();
+
             const payload = {
-                receipts: receiptData,
+                receipts: sortedReceipts,
                 subsidy: Number(document.getElementById('subsidyAmount').value) || 0,
                 group_name: document.getElementById('groupName').value || '○○部',
                 author_name: document.getElementById('authorName').value || '',
@@ -661,18 +700,20 @@
             }
         }
 
-        // CSV出力
+        // CSV出力（番号の若い順・日付の古い順）
         function exportCSV() {
             if (receiptData.length === 0) {
                 alert("出力するデータがありません。");
                 return;
             }
 
+            const sortedReceipts = getNumberedReceipts();
+
             let csvContent = "\uFEFF領収書No.,支払年月日,摘要,支出金額(円),備考（店舗名/目的）,宛名,支払方法,不備チェック警告\n";
 
-            receiptData.forEach((item, index) => {
-                const warnText = item.warnings.join(' / ').replace(/"/g, '""');
-                csvContent += `"${index + 1}","${item.date}","${item.proviso}","${item.total_amount}","${item.store_name}","${item.addressee}","${item.payment_method}","${warnText}"\n`;
+            sortedReceipts.forEach((item) => {
+                const warnText = (item.warnings || []).join(' / ').replace(/"/g, '""');
+                csvContent += `"${item.number}","${item.date}","${item.proviso}","${item.total_amount}","${item.store_name}","${item.addressee}","${item.payment_method}","${warnText}"\n`;
             });
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -684,23 +725,25 @@
             URL.revokeObjectURL(url);
         }
 
-        // A4印刷出力
+        // A4印刷出力（番号の若い順・日付の古い順）
         function printA4Sheets() {
             if (receiptData.length === 0) {
                 alert("印刷するデータがありません。");
                 return;
             }
 
+            const sortedReceipts = getNumberedReceipts();
+
             const printArea = document.getElementById('printArea');
             printArea.innerHTML = '';
 
-            receiptData.forEach((item, index) => {
+            sortedReceipts.forEach((item) => {
                 const sheet = document.createElement('div');
                 sheet.className = 'a4-sheet';
 
                 sheet.innerHTML = `
                     <div class="a4-header">
-                        <span>領収書No.: ${index + 1}</span>
+                        <span>領収書No.: ${item.number}</span>
                         <span>東邦大学青藍会 決算報告 証拠書類貼付台紙</span>
                     </div>
                     <div class="a4-body">
@@ -711,7 +754,7 @@
                         <strong>【記載内容確認】</strong><br>
                         支払年月日: ${item.date} | 支出金額: ¥${Number(item.total_amount).toLocaleString()} | 摘要: ${item.proviso}<br>
                         備考/支払先: ${item.store_name} | 宛名: ${item.addressee} | 支払方法: ${item.payment_method}<br>
-                        ${item.warnings.length > 0 ? `<span style="color:red;">⚠️ 注意事項: ${item.warnings.join(', ')}</span>` : ''}
+                        ${(item.warnings && item.warnings.length > 0) ? `<span style="color:red;">⚠️ 注意事項: ${item.warnings.join(', ')}</span>` : ''}
                     </div>
                 `;
                 printArea.appendChild(sheet);

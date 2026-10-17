@@ -82,13 +82,16 @@ def export_excel():
         tel = data.get('tel', '')
         mail = data.get('mail', '')
 
-        # 英字名テンプレートファイルを優先的に読み込み
+        # テンプレートファイルを自動探索（.xlsxファイルを検出）
         template_filename = 'template.xlsx'
         if not os.path.exists(template_filename):
-            template_filename = '学生団体（各部活動）202506.xlsx'
+            for f in os.listdir('.'):
+                if f.endswith('.xlsx') and not f.startswith('~$'):
+                    template_filename = f
+                    break
 
         if not os.path.exists(template_filename):
-            return jsonify({"error": "テンプレートファイル(template.xlsx)が見つかりません。"}), 500
+            return jsonify({"error": "ひな形Excelファイル(.xlsx)がサーバー上に見つかりません。Gitに.xlsxファイルをコミットしてください。"}), 500
 
         wb = openpyxl.load_workbook(template_filename)
         ws = wb['決算報告'] if '決算報告' in wb.sheetnames else wb.active
@@ -116,9 +119,11 @@ def export_excel():
             for c in range(2, 7):
                 ws.cell(row=r, column=c).value = None
 
-        # 3. 支出明細の流し込み (14行目から順次記録)
+        # 3. 日付の古い順（番号の若い順）にソートして14行目から書き込み
+        receipts_sorted = sorted(receipts, key=lambda x: x.get('date', '') or '9999-99-99')
+
         start_row = 14
-        for i, item in enumerate(receipts):
+        for i, item in enumerate(receipts_sorted):
             r = start_row + i
             amt = item.get('total_amount', 0)
             try:
@@ -126,7 +131,10 @@ def export_excel():
             except (ValueError, TypeError):
                 amt = 0
 
-            ws.cell(row=r, column=2, value=i + 1)                      # B列: 領収書No.
+            # 番号の若い順 (1, 2, 3...)
+            receipt_no = item.get('number', i + 1)
+
+            ws.cell(row=r, column=2, value=receipt_no)                 # B列: 領収書No.
             ws.cell(row=r, column=3, value=item.get('date', ''))        # C列: 支払年月日
             ws.cell(row=r, column=4, value=item.get('proviso', ''))     # D列: 摘要
             ws.cell(row=r, column=5, value=amt)                        # E列: 支出金額
