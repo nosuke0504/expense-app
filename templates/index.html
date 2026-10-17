@@ -2,46 +2,49 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>青藍会 決算報告用レシート管理アプリ</title>
     <style>
-        body { font-family: sans-serif; padding: 15px; background-color: #f8f9fa; color: #333; margin: 0; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        h2 { border-bottom: 2px solid #0066cc; padding-bottom: 8px; color: #0066cc; margin-top: 0; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 10px; background-color: #f4f6f9; color: #333; margin: 0; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        h2 { border-bottom: 2px solid #0066cc; padding-bottom: 6px; color: #0066cc; margin-top: 0; font-size: 18px; text-align: center; }
+        h3 { font-size: 16px; margin-top: 10px; margin-bottom: 12px; }
         
-        /* タブナビゲーション */
-        .tab-nav { display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #0066cc; }
-        .tab-btn { padding: 10px 18px; border: none; background-color: #e9ecef; cursor: pointer; font-size: 15px; font-weight: bold; border-radius: 6px 6px 0 0; color: #495057; }
+        /* タブナビゲーション（スマホ表示で3均等割） */
+        .tab-nav { display: flex; gap: 4px; margin-bottom: 15px; border-bottom: 2px solid #0066cc; background: #e9ecef; padding: 4px 4px 0 4px; border-radius: 8px 8px 0 0; }
+        .tab-btn { flex: 1; padding: 10px 4px; border: none; background-color: transparent; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px 6px 0 0; color: #495057; text-align: center; }
         .tab-btn.active { background-color: #0066cc; color: white; }
 
         /* カメラ表示エリア */
-        .camera-section { padding: 15px; background: #111; color: #fff; border-radius: 8px; text-align: center; position: relative; }
+        .camera-section { padding: 12px; background: #111; color: #fff; border-radius: 10px; text-align: center; position: relative; }
         .video-wrapper { position: relative; width: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; border-radius: 8px; background: #000; }
         video { width: 100%; height: auto; display: block; }
         
         .guide-box {
-            position: absolute; top: 10%; left: 10%; width: 80%; height: 80%;
+            position: absolute; top: 8%; left: 8%; width: 84%; height: 84%;
             border: 2px dashed #00ffcc; border-radius: 8px; box-sizing: border-box;
             pointer-events: none; display: flex; align-items: center; justify-content: center;
         }
-        .guide-text { color: #00ffcc; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .guide-text { color: #00ffcc; background: rgba(0,0,0,0.65); padding: 4px 8px; border-radius: 4px; font-size: 11px; }
 
-        .controls { margin-top: 12px; }
-        button { background-color: #0066cc; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .controls { margin-top: 10px; display: flex; gap: 8px; justify-content: center; }
+        button { background-color: #0066cc; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; min-height: 44px; touch-action: manipulation; }
         button:disabled { background-color: #777; cursor: not-allowed; }
         button.btn-success { background-color: #28a745; }
         button.btn-success:hover { background-color: #218838; }
-        button.btn-danger { background-color: #dc3545; }
+        button.btn-danger { background-color: #dc3545; padding: 6px 12px; min-height: 36px; }
         button.btn-secondary { background-color: #6c757d; }
         
-        #status { margin-top: 10px; font-weight: bold; color: #00ffcc; min-height: 24px; }
+        #status { margin-top: 8px; font-weight: bold; color: #00ffcc; min-height: 20px; font-size: 13px; }
 
-        /* Excel風 縦軸固定テーブルレイアウト */
+        /* Excel風 縦軸固定テーブルレイアウト（スマホ最適化） */
         .table-responsive {
             overflow-x: auto;
-            margin-top: 15px;
+            -webkit-overflow-scrolling: touch;
+            margin-top: 10px;
             border: 1px solid #d0d7de;
-            border-radius: 6px;
+            border-radius: 8px;
             background: #fff;
         }
         .excel-vertical-table {
@@ -51,7 +54,7 @@
         }
         .excel-vertical-table th, .excel-vertical-table td {
             border: 1px solid #d0d7de;
-            padding: 8px 12px;
+            padding: 8px 10px;
             font-size: 13px;
             vertical-align: middle;
         }
@@ -60,28 +63,65 @@
             left: 0;
             background-color: #f0f4f8;
             z-index: 2;
-            min-width: 180px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            min-width: 140px;
+            max-width: 150px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.08);
             font-weight: bold;
             color: #333;
             text-align: left;
+            font-size: 12px;
         }
 
-        input[type="text"], input[type="number"], select { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-        .warning-tag { display: block; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
-        
-        /* 決算報告まとめ計算ボックス */
-        .summary-box { margin-top: 20px; padding: 15px; background: #eef6ff; border-radius: 6px; border: 1px solid #cce0ff; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px; }
-        .summary-inputs { display: flex; align-items: center; gap: 10px; font-weight: bold; }
-        .summary-inputs input { width: 140px; font-size: 16px; padding: 4px 8px; }
-        .summary-results { font-size: 16px; font-weight: bold; text-align: right; }
-        .refund-text { color: #dc3545; font-size: 18px; }
+        /* スマホでの自動ズーム防止用に16px確保 */
+        input[type="text"], input[type="number"], select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 16px;
+            -webkit-appearance: none;
+        }
 
-        .action-bar { margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end; }
+        .warning-tag { display: block; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; font-size: 11px; line-height: 1.3; }
+        
+        /* 決算報告まとめ計算ボックス（スマホ用1列表示） */
+        .summary-box {
+            margin-top: 15px;
+            padding: 12px;
+            background: #eef6ff;
+            border-radius: 8px;
+            border: 1px solid #cce0ff;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .summary-inputs { display: flex; flex-direction: column; gap: 4px; font-weight: bold; font-size: 14px; }
+        .summary-inputs input { width: 100%; font-size: 16px; padding: 8px; }
+        .summary-results { font-size: 14px; font-weight: bold; text-align: left; border-top: 1px dashed #b8daff; padding-top: 8px; line-height: 1.6; }
+        .refund-text { color: #dc3545; font-size: 16px; font-weight: bold; display: block; margin-top: 4px; }
+
+        /* スマホ画面用アクションボタン（全幅表示） */
+        .action-bar { margin-top: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .action-bar button { width: 100%; font-size: 14px; }
 
         /* 手動入力フォーム */
-        .manual-form-group { margin-bottom: 15px; }
-        .manual-form-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        .manual-form-group { margin-bottom: 12px; }
+        .manual-form-group label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 13px; }
+
+        /* PC画面向けメディアクエリ（デスクトップ時） */
+        @media (min-width: 768px) {
+            h2 { font-size: 22px; text-align: left; }
+            .tab-btn { font-size: 15px; padding: 10px 18px; }
+            .summary-box { flex-direction: row; justify-content: space-between; align-items: center; }
+            .summary-inputs { flex-direction: row; align-items: center; }
+            .summary-inputs input { width: 140px; }
+            .summary-results { text-align: right; border-top: none; padding-top: 0; }
+            .action-bar { flex-direction: row; justify-content: flex-end; }
+            .action-bar button { width: auto; }
+            .excel-vertical-table th.sticky-header { min-width: 180px; font-size: 13px; }
+            input[type="text"], input[type="number"], select { font-size: 13px; padding: 6px; }
+        }
 
         /* A4印刷用レイアウト設定 */
         @media print {
@@ -102,8 +142,8 @@
         
         <!-- タブナビゲーション -->
         <div class="tab-nav">
-            <button class="tab-btn active" id="btnTabCamera" onclick="switchTab('camera')">📷 カメラ読み取り</button>
-            <button class="tab-btn" id="btnTabList" onclick="switchTab('list')">📋 支出一覧（決算報告用）</button>
+            <button class="tab-btn active" id="btnTabCamera" onclick="switchTab('camera')">📷 カメラ</button>
+            <button class="tab-btn" id="btnTabList" onclick="switchTab('list')">📋 支出一覧</button>
             <button class="tab-btn" id="btnTabManual" onclick="switchTab('manual')">✍️ 手動入力</button>
         </div>
 
@@ -119,7 +159,7 @@
                 
                 <div class="controls">
                     <button id="startCamBtn">📷 カメラを起動</button>
-                    <button id="manualScanBtn" style="display:none;" class="btn-success">⚡ 今すぐ解析（手動）</button>
+                    <button id="manualScanBtn" style="display:none;" class="btn-success">⚡ 今すぐ解析</button>
                 </div>
                 <div id="status">「カメラを起動」ボタンを押してください</div>
             </div>
@@ -150,14 +190,14 @@
             <!-- ファイル出力・印刷ボタン -->
             <div class="action-bar">
                 <button onclick="exportCSV()" class="btn-secondary">📊 CSV出力（Excel用）</button>
-                <button onclick="printA4Sheets()" class="btn-success">🖨️ A4貼り付け台紙の印刷・PDF出力</button>
+                <button onclick="printA4Sheets()" class="btn-success">🖨️ A4貼り付け台紙の印刷・PDF</button>
             </div>
         </div>
 
         <!-- 3. 手動入力ビュー -->
         <div id="manualView" class="tab-content" style="display:none;">
             <h3>手動入力フォーム</h3>
-            <form id="manualForm" style="background: #f0f4f8; padding: 20px; border-radius: 8px; border: 1px solid #d0d7de;">
+            <form id="manualForm" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #d0d7de;">
                 <div class="manual-form-group">
                     <label for="m_date">日付 (YYYY-MM-DD):</label>
                     <input type="text" id="m_date" placeholder="例: 2026-06-12" required>
@@ -187,7 +227,7 @@
                     <label for="m_amount">金額(円):</label>
                     <input type="number" id="m_amount" placeholder="例: 5000" required>
                 </div>
-                <button type="submit" class="btn-success" style="width: 100%; padding: 12px; font-size: 16px;">＋ 支出一覧に追加</button>
+                <button type="submit" class="btn-success" style="width: 100%; padding: 12px; font-size: 16px; margin-top: 5px;">＋ 支出一覧に追加</button>
             </form>
         </div>
     </div>
@@ -380,7 +420,7 @@
             container.innerHTML = '';
 
             if (receiptData.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:30px; color:#666;">データが登録されていません。「カメラ読み取り」または「手動入力」から追加してください。</div>';
+                container.innerHTML = '<div style="text-align:center; padding:30px 10px; color:#666; font-size:13px;">データが登録されていません。<br>「カメラ」または「手動入力」から追加してください。</div>';
                 updateSummary();
                 return;
             }
@@ -388,7 +428,6 @@
             const table = document.createElement('table');
             table.className = 'excel-vertical-table';
 
-            // 項目見出し（縦軸）
             const labels = [
                 '通し番号',
                 '日付',
@@ -401,7 +440,6 @@
                 '操作'
             ];
 
-            // 縦軸の見出し行を生成
             const rows = labels.map(label => {
                 const tr = document.createElement('tr');
                 const th = document.createElement('th');
@@ -411,7 +449,6 @@
                 return tr;
             });
 
-            // 各レシートのデータを列（横方向）に追加
             receiptData.forEach((item, index) => {
                 // 0: 通し番号
                 const td0 = document.createElement('td');
@@ -446,7 +483,7 @@
                 // 7: ガイドライン不備チェック・警告
                 const tdWarn = document.createElement('td');
                 tdWarn.id = `warn-${index}`;
-                tdWarn.style.minWidth = '220px';
+                tdWarn.style.minWidth = '200px';
                 renderWarningsTd(tdWarn, item.warnings);
                 rows[7].appendChild(tdWarn);
 
@@ -477,7 +514,7 @@
 
         function createInputTd(value, onChange, type = 'text') {
             const td = document.createElement('td');
-            td.style.minWidth = '160px';
+            td.style.minWidth = '150px';
             const input = document.createElement('input');
             input.type = type;
             input.value = value;
