@@ -5,16 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>青藍会 決算報告用レシート管理アプリ</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; background-color: #f8f9fa; color: #333; }
+        body { font-family: sans-serif; padding: 15px; background-color: #f8f9fa; color: #333; margin: 0; }
         .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        h2 { border-bottom: 2px solid #0066cc; padding-bottom: 8px; color: #0066cc; }
-        .upload-section { margin-bottom: 20px; padding: 15px; background: #eef6ff; border: 1px solid #cce0ff; border-radius: 6px; }
-        input[type="file"] { margin-bottom: 10px; }
-        button { background-color: #0066cc; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        button:disabled { background-color: #a0c4e8; cursor: not-allowed; }
+        h2 { border-bottom: 2px solid #0066cc; padding-bottom: 8px; color: #0066cc; margin-top: 0; }
+        
+        /* カメラ表示エリア */
+        .camera-section { margin-bottom: 20px; padding: 15px; background: #111; color: #fff; border-radius: 8px; text-align: center; position: relative; }
+        .video-wrapper { position: relative; width: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; border-radius: 8px; background: #000; }
+        video { width: 100%; height: auto; display: block; }
+        
+        /* レシート合わせ枠（ガイドライン） */
+        .guide-box {
+            position: absolute; top: 10%; left: 10%; width: 80%; height: 80%;
+            border: 2px dashed #00ffcc; border-radius: 8px; box-sizing: border-box;
+            pointer-events: none; display: flex; align-items: center; justify-content: center;
+        }
+        .guide-text { color: #00ffcc; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+
+        .controls { margin-top: 12px; }
+        button { background-color: #0066cc; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        button:disabled { background-color: #777; cursor: not-allowed; }
         button.btn-danger { background-color: #dc3545; }
-        button.btn-danger:hover { background-color: #bd2130; }
-        #status { margin-top: 10px; font-weight: bold; color: #0066cc; }
+        
+        #status { margin-top: 10px; font-weight: bold; color: #00ffcc; min-height: 24px; }
+        
+        /* テーブル表示 */
         .table-responsive { overflow-x: auto; margin-top: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
         th, td { border: 1px solid #d0d7de; padding: 8px; text-align: left; vertical-align: top; }
@@ -29,15 +44,23 @@
     <div class="container">
         <h2>青藍会 決算報告用レシート管理</h2>
         
-        <div class="upload-section">
-            <h3>レシートを撮影・追加</h3>
-            <form id="uploadForm">
-                <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" required>
-                <br>
-                <button type="submit" id="submitBtn">解析して一覧に追加</button>
-            </form>
-            <div id="status"></div>
+        <div class="camera-section">
+            <div class="video-wrapper">
+                <video id="video" autoplay playsinline muted></video>
+                <div class="guide-box">
+                    <span class="guide-text">枠内にレシートをかざしてください</span>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button id="startCamBtn">📷 カメラを起動</button>
+                <button id="manualScanBtn" style="display:none; background-color: #28a745;">⚡ 今すぐ解析（手動）</button>
+            </div>
+            <div id="status">「カメラを起動」ボタンを押してください</div>
         </div>
+
+        <!-- 内部キャプチャ用Canvas（非表示） -->
+        <canvas id="canvas" style="display:none;"></canvas>
 
         <div id="listSection">
             <h3>支出一覧（決算報告用）</h3>
@@ -46,12 +69,12 @@
                     <thead>
                         <tr>
                             <th style="width: 50px;">通し番号</th>
-                            <th style="width: 120px;">日付</th>
-                            <th style="width: 150px;">支払先（店舗名）</th>
-                            <th style="width: 140px;">宛名</th>
-                            <th style="width: 150px;">但書（品名など）</th>
-                            <th style="width: 100px;">支払方法</th>
-                            <th style="width: 110px;">金額(円)</th>
+                            <th style="width: 110px;">日付</th>
+                            <th style="width: 140px;">支払先（店舗名）</th>
+                            <th style="width: 130px;">宛名</th>
+                            <th style="width: 140px;">但書（品名など）</th>
+                            <th style="width: 90px;">支払方法</th>
+                            <th style="width: 100px;">金額(円)</th>
                             <th>ガイドライン不備チェック・警告</th>
                             <th style="width: 60px;">操作</th>
                         </tr>
@@ -69,53 +92,141 @@
     </div>
 
     <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startCamBtn = document.getElementById('startCamBtn');
+        const manualScanBtn = document.getElementById('manualScanBtn');
+        const status = document.getElementById('status');
+
+        let isAnalyzing = false;
+        let stream = null;
+        let scanInterval = null;
+        let lastFrameData = null;
+        let stableCount = 0;
         let receiptData = [];
 
-        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const fileInput = document.getElementById('fileInput');
-            const status = document.getElementById('status');
-            const submitBtn = document.getElementById('submitBtn');
-
-            if (!fileInput.files[0]) return;
-
-            submitBtn.disabled = true;
-            status.innerText = "⚡ 解析中...";
-
-            const startTime = Date.now();
-            const file = fileInput.files[0];
-            
-            // 長辺500px, 画質0.5まで圧縮
-            const resizedBlob = await resizeImage(file, 500, 0.5);
-
-            const formData = new FormData();
-            formData.append('file', resizedBlob, 'receipt.jpg');
-
+        // カメラ起動
+        startCamBtn.addEventListener('click', async () => {
             try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } } // 背面カメラを優先
+                }).catch(() => {
+                    // 背面カメラが特定できない場合は通常のカメラで起動
+                    return navigator.mediaDevices.getUserMedia({ video: true });
                 });
-                const data = await response.json();
-                
-                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                
-                if (data.result) {
-                    const parsed = JSON.parse(data.result);
-                    addReceiptToList(parsed);
-                    status.innerText = `✅ 追加完了 (${elapsed}秒)`;
-                    fileInput.value = '';
-                } else {
-                    status.innerText = "エラー: " + (data.error || "解析失敗");
-                }
+
+                video.srcObject = stream;
+                startCamBtn.style.display = 'none';
+                manualScanBtn.style.display = 'inline-block';
+                status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
+
+                // 自動静止検知ループの開始（300msごと）
+                scanInterval = setInterval(checkFrameStability, 300);
+
             } catch (err) {
-                status.innerText = "通信エラーまたは解析データの読み取りに失敗しました";
+                alert("カメラの起動に失敗しました。カメラのアクセス許可を確認してください。");
                 console.error(err);
-            } finally {
-                submitBtn.disabled = false;
             }
         });
 
+        // 手動キャプチャボタン
+        manualScanBtn.addEventListener('click', () => {
+            if (!isAnalyzing) {
+                captureAndUpload();
+            }
+        });
+
+        // 映像のブレ（静止状態）をチェックして自動解析をトリガー
+        function checkFrameStability() {
+            if (isAnalyzing || !video.videoWidth) return;
+
+            const ctx = canvas.getContext('2d');
+            // 軽量化のために極小サイズで差分判定
+            canvas.width = 100;
+            canvas.height = 100;
+            ctx.drawImage(video, 0, 0, 100, 100);
+
+            const currentFrame = ctx.getImageData(0, 0, 100, 100).data;
+
+            if (lastFrameData) {
+                let diff = 0;
+                // ピクセル差分の簡易計算
+                for (let i = 0; i < currentFrame.length; i += 16) {
+                    diff += Math.abs(currentFrame[i] - lastFrameData[i]);
+                }
+
+                // 動きが小さい（静止している）場合
+                if (diff < 1500) { 
+                    stableCount++;
+                    status.innerText = `🎯 固定を検知中... (${stableCount}/3)`;
+                    
+                    // 3回連続（約0.9秒間）静止したら自動撮影！
+                    if (stableCount >= 3) {
+                        stableCount = 0;
+                        captureAndUpload();
+                    }
+                } else {
+                    stableCount = 0;
+                    status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
+                }
+            }
+            lastFrameData = currentFrame;
+        }
+
+        // キャプチャ＆サーバー送信
+        async function captureAndUpload() {
+            isAnalyzing = true;
+            status.innerText = "⚡ 解析中... (動かさないでください)";
+
+            // 高精細用にCanvasサイズを設定
+            const width = 500;
+            const height = Math.round((video.videoHeight * width) / video.videoWidth);
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, width, height);
+
+            // JPEG Blob化 (画質0.5)
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'receipt.jpg');
+
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+
+                    if (data.result) {
+                        const parsed = JSON.parse(data.result);
+                        addReceiptToList(parsed);
+                        status.innerText = "✅ 追加しました！次のレシートをかざせます";
+                        
+                        // 効果音代わりの視覚フィードバック（画面を一瞬白くする）
+                        document.querySelector('.video-wrapper').style.opacity = '0.3';
+                        setTimeout(() => document.querySelector('.video-wrapper').style.opacity = '1', 200);
+
+                    } else {
+                        status.innerText = "❌ 認識失敗: " + (data.error || "もう一度かざしてください");
+                    }
+                } catch (err) {
+                    status.innerText = "❌ 通信エラーが発生しました";
+                    console.error(err);
+                } finally {
+                    // クールダウン（2.5秒間は次の自動解析を行わない）
+                    setTimeout(() => {
+                        isAnalyzing = false;
+                        stableCount = 0;
+                        lastFrameData = null;
+                        status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
+                    }, 2500);
+                }
+            }, 'image/jpeg', 0.5);
+        }
+
+        // --- テーブル追加・管理用ロジック ---
         function addReceiptToList(parsedItem) {
             receiptData.push({
                 date: parsedItem.date || '',
@@ -132,84 +243,32 @@
         function renderTable() {
             const tbody = document.getElementById('receiptList');
             tbody.innerHTML = '';
-
             let sum = 0;
 
             receiptData.forEach((item, index) => {
                 sum += Number(item.total_amount) || 0;
                 const tr = document.createElement('tr');
 
-                // 通し番号
-                const tdNum = document.createElement('td');
-                tdNum.className = 'num-col';
-                tdNum.innerText = index + 1;
-                tr.appendChild(tdNum);
-
-                // 日付
-                const tdDate = document.createElement('td');
-                const inDate = document.createElement('input');
-                inDate.type = 'text';
-                inDate.value = item.date;
-                inDate.onchange = (e) => { item.date = e.target.value; };
-                tdDate.appendChild(inDate);
-                tr.appendChild(tdDate);
-
-                // 支払先
-                const tdStore = document.createElement('td');
-                const inStore = document.createElement('input');
-                inStore.type = 'text';
-                inStore.value = item.store_name;
-                inStore.onchange = (e) => { item.store_name = e.target.value; };
-                tdStore.appendChild(inStore);
-                tr.appendChild(tdStore);
-
-                // 宛名
-                const tdAddr = document.createElement('td');
-                const inAddr = document.createElement('input');
-                inAddr.type = 'text';
-                inAddr.value = item.addressee;
-                inAddr.onchange = (e) => { item.addressee = e.target.value; recheckWarnings(index); };
-                tdAddr.appendChild(inAddr);
-                tr.appendChild(tdAddr);
-
-                // 但書
-                const tdProv = document.createElement('td');
-                const inProv = document.createElement('input');
-                inProv.type = 'text';
-                inProv.value = item.proviso;
-                inProv.onchange = (e) => { item.proviso = e.target.value; recheckWarnings(index); };
-                tdProv.appendChild(inProv);
-                tr.appendChild(tdProv);
-
-                // 支払方法
-                const tdPay = document.createElement('td');
-                const inPay = document.createElement('input');
-                inPay.type = 'text';
-                inPay.value = item.payment_method;
-                inPay.onchange = (e) => { item.payment_method = e.target.value; };
-                tdPay.appendChild(inPay);
-                tr.appendChild(tdPay);
-
-                // 金額
-                const tdAmt = document.createElement('td');
-                const inAmt = document.createElement('input');
-                inAmt.type = 'number';
-                inAmt.value = item.total_amount;
-                inAmt.onchange = (e) => { 
-                    item.total_amount = Number(e.target.value) || 0; 
+                // 各セル生成
+                tr.appendChild(createTd(index + 1, 'num-col'));
+                tr.appendChild(createInputTd(item.date, (v) => item.date = v));
+                tr.appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
+                tr.appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(index); }));
+                tr.appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(index); }));
+                tr.appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
+                tr.appendChild(createInputTd(item.total_amount, (v) => { 
+                    item.total_amount = Number(v) || 0; 
                     recheckWarnings(index);
                     updateSummary(); 
-                };
-                tdAmt.appendChild(inAmt);
-                tr.appendChild(tdAmt);
+                }, 'number'));
 
-                // 警告・不備情報
+                // 警告セル
                 const tdWarn = document.createElement('td');
                 tdWarn.id = `warn-${index}`;
                 renderWarningsTd(tdWarn, item.warnings);
                 tr.appendChild(tdWarn);
 
-                // 操作（削除）
+                // 削除ボタン
                 const tdAction = document.createElement('td');
                 tdAction.style.textAlign = 'center';
                 const delBtn = document.createElement('button');
@@ -227,6 +286,23 @@
 
             document.getElementById('totalCount').innerText = receiptData.length;
             document.getElementById('totalSum').innerText = sum.toLocaleString();
+        }
+
+        function createTd(text, className = '') {
+            const td = document.createElement('td');
+            if (className) td.className = className;
+            td.innerText = text;
+            return td;
+        }
+
+        function createInputTd(value, onChange, type = 'text') {
+            const td = document.createElement('td');
+            const input = document.createElement('input');
+            input.type = type;
+            input.value = value;
+            input.onchange = (e) => onChange(e.target.value);
+            td.appendChild(input);
+            return td;
         }
 
         function renderWarningsTd(tdElement, warnings) {
@@ -270,37 +346,6 @@
                 sum += Number(item.total_amount) || 0;
             });
             document.getElementById('totalSum').innerText = sum.toLocaleString();
-        }
-
-        // 高速圧縮関数
-        function resizeImage(file, maxWidth, quality) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const img = new Image();
-                    img.onload = function() {
-                        let width = img.width;
-                        let height = img.height;
-
-                        if (width > maxWidth) {
-                            height = Math.round((height * maxWidth) / width);
-                            width = maxWidth;
-                        }
-
-                        const canvas = document.createElement('canvas');
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-
-                        canvas.toBlob((blob) => {
-                            resolve(blob);
-                        }, 'image/jpeg', quality);
-                    };
-                    img.src = e.target.result;
-                };
-                reader.readAsDataURL(file);
-            });
         }
     </script>
 </body>
