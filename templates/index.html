@@ -476,6 +476,65 @@
         </div>
     </div>
 
+    <!-- 4. 解析結果の確認・編集モーダル -->
+    <div id="previewModal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(1, 17, 38, 0.7); z-index: 100; align-items: center; justify-content: center; padding: 12px; backdrop-filter: blur(4px);">
+        <div style="background: #ffffff; width: 100%; max-width: 500px; border-radius: 14px; padding: 18px; border: 2px solid #ADA605; box-shadow: 0 10px 25px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ADA605; padding-bottom: 8px; margin-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 16px; color: #011126; font-weight: 700;">
+                    <i class="fa-solid fa-pen-to-square text-[#565902] mr-1"></i> 解析結果の確認・手動修正
+                </h3>
+                <button type="button" onclick="closePreviewModal()" style="background: none; border: none; font-size: 18px; color: #78716c; cursor: pointer; padding: 4px; min-height: auto;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <p style="font-size: 11px; color: #565902; font-weight: 600; margin-top: 0; margin-bottom: 12px; background: rgba(242, 202, 126, 0.2); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #ADA605;">
+                <i class="fa-solid fa-circle-info mr-1"></i> 自動解析された内容をご確認ください。備考（購入目的）などを自由に書き直してから決算報告書に記録できます。
+            </p>
+
+            <form id="previewForm">
+                <div class="manual-form-group">
+                    <label for="p_date">支払年月日 (YYYY-MM-DD):</label>
+                    <input type="text" id="p_date" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="p_proviso">摘要（但書・品名など）:</label>
+                    <input type="text" id="p_proviso" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="p_amount">支出金額(円):</label>
+                    <input type="number" id="p_amount" required>
+                </div>
+                <div class="manual-form-group">
+                    <label for="p_store" style="color: #011126; font-weight: 700;">
+                        <i class="fa-solid fa-pen text-[#ADA605] mr-1"></i> 備考（購入目的・店舗名など） <span style="font-size: 10px; color: #565902;">※手動編集可能</span>:
+                    </label>
+                    <input type="text" id="p_store" placeholder="例: 〇〇文具店 / 〇〇大会用備品代" style="border: 2px solid #ADA605; background-color: #fffdf5;">
+                </div>
+                <div class="manual-form-group">
+                    <label for="p_addressee">宛名:</label>
+                    <input type="text" id="p_addressee">
+                </div>
+                <div class="manual-form-group">
+                    <label for="p_payment">支払方法:</label>
+                    <select id="p_payment">
+                        <option value="現金">現金</option>
+                        <option value="クレジットカード">クレジットカード</option>
+                        <option value="銀行振込">銀行振込</option>
+                        <option value="その他">その他</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button type="button" onclick="closePreviewModal()" class="btn-secondary" style="flex: 1; background: #78716c;">
+                        キャンセル
+                    </button>
+                    <button type="submit" class="btn-success" style="flex: 2; padding: 12px; font-size: 14px;">
+                        <i class="fa-solid fa-plus-circle"></i> この内容で保存・記録
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- 印刷専用領域 -->
     <div id="printArea" style="display:none;"></div>
 
@@ -492,6 +551,7 @@
         let lastFrameData = null;
         let stableCount = 0;
         let receiptData = [];
+        let currentPendingItem = null; // プレビュー確認中のデータ
 
         // タブ切り替え機能
         function switchTab(tabName) {
@@ -598,9 +658,11 @@
                     if (data.result) {
                         const parsed = JSON.parse(data.result);
                         parsed.imageData = imageDataUrl;
-                        addReceiptToList(parsed);
-                        status.innerText = "✅ 追加しました！次のレシートをかざせます";
                         
+                        // 直接追加せず手動修正モーダルを開く
+                        openPreviewModal(parsed);
+                        status.innerText = "📝 解析結果の修正・確認画面が開きました";
+
                         document.querySelector('.video-wrapper').style.opacity = '0.3';
                         setTimeout(() => document.querySelector('.video-wrapper').style.opacity = '1', 200);
 
@@ -615,11 +677,58 @@
                         isAnalyzing = false;
                         stableCount = 0;
                         lastFrameData = null;
-                        status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
+                        if (document.getElementById('previewModal').style.display === 'none') {
+                            status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
+                        }
                     }, 2500);
                 }
             }, 'image/jpeg', 0.6);
         }
+
+        // 解析結果確認モーダルを開く関数
+        function openPreviewModal(parsed) {
+            currentPendingItem = parsed;
+            document.getElementById('p_date').value = parsed.date || '';
+            document.getElementById('p_proviso').value = parsed.proviso || '';
+            document.getElementById('p_amount').value = parsed.total_amount || 0;
+            document.getElementById('p_store').value = parsed.store_name || '';
+            document.getElementById('p_addressee').value = parsed.addressee || '東邦大学○○部';
+            document.getElementById('p_payment').value = ['現金', 'クレジットカード', '銀行振込'].includes(parsed.payment_method) ? parsed.payment_method : '現金';
+
+            document.getElementById('previewModal').style.display = 'flex';
+        }
+
+        // モーダルを閉じる関数
+        function closePreviewModal() {
+            document.getElementById('previewModal').style.display = 'none';
+            currentPendingItem = null;
+            status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
+        }
+
+        // 確認モーダルフォーム送信イベント（記録実行）
+        document.getElementById('previewForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!currentPendingItem) return;
+
+            const item = {
+                date: document.getElementById('p_date').value,
+                store_name: document.getElementById('p_store').value,
+                addressee: document.getElementById('p_addressee').value,
+                proviso: document.getElementById('p_proviso').value,
+                payment_method: document.getElementById('p_payment').value,
+                total_amount: Number(document.getElementById('p_amount').value) || 0,
+                doc_type: currentPendingItem.doc_type || '領収書',
+                imageData: currentPendingItem.imageData || '',
+                warnings: []
+            };
+
+            receiptData.push(item);
+            recheckWarnings(receiptData.length - 1);
+
+            closePreviewModal();
+            alert('修正した内容で決算報告書に追加・記録しました！');
+            switchTab('list');
+        });
 
         // 手動入力フォーム送信イベント
         document.getElementById('manualForm').addEventListener('submit', function(e) {
