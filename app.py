@@ -34,15 +34,30 @@ def upload():
             mime_type="image/jpeg"
         )
 
+        system_instruction = (
+            "あなたは東邦大学青藍会補助費決算報告用の領収証・レシート画像解析システムです。"
+            "画像から以下の項目を抽出し、JSONフォーマットで返却してください。\n"
+            "- date: 発行日または注文日 (YYYY-MM-DD形式)\n"
+            "- store_name: 支払先・店舗名\n"
+            "- addressee: 宛名（「東邦大学〇〇部」、「個人名」、「記載なし」など）\n"
+            "- proviso: 但書（例: 「○○購入代」、「品代」など）\n"
+            "- total_amount: 合計金額（数値のみ）\n"
+            "- payment_method: 支払方法（「現金」、「クレジットカード」、「不明」など）\n"
+            "- warnings: ガイドラインに基づく不備警告メッセージの配列。以下のルールを評価してください：\n"
+            "  1. 宛名が「東邦大学〇〇部」形式でない場合（なし、または個人名）: '宛名が大学・団体名ではありません（個人名の場合は部員名簿等の添付が必要です）。'\n"
+            "  2. 但書が「品代」や「備品代」など具体的でない場合: '但書が曖昧です（具体的な購入品がわかる明細レシート等を添付してください）。'\n"
+            "  3. 金額が50,000円以上の場合: '5万円以上の支出です（収入印紙・割印の貼付、またはクレジットカード利用の明記が必要です）。'\n"
+        )
+
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.0,
-            system_instruction="Extract date, store_name, total_amount from receipt image."
+            system_instruction=system_instruction
         )
 
         response = client.models.generate_content(
             model='gemini-3.8-flash',
-            contents=[image_part, "Return JSON only."],
+            contents=[image_part, "Extract details as JSON according to system instruction."],
             config=config
         )
 

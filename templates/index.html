@@ -3,46 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>レシート記録アプリ</title>
+    <title>青藍会 決算報告用レシート管理アプリ</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        #resultBox { margin-top: 15px; padding: 12px; background: #f0f4f8; border-radius: 8px; border: 1px solid #d0d7de; }
+        body { font-family: sans-serif; padding: 20px; background-color: #f8f9fa; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h2 { border-bottom: 2px solid #0066cc; padding-bottom: 8px; color: #0066cc; }
+        .upload-section { margin-bottom: 20px; padding: 15px; background: #eef6ff; border: 1px solid #cce0ff; border-radius: 6px; }
+        input[type="file"] { margin-bottom: 10px; }
+        button { background-color: #0066cc; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        button:disabled { background-color: #a0c4e8; cursor: not-allowed; }
+        button.btn-danger { background-color: #dc3545; }
+        button.btn-danger:hover { background-color: #bd2130; }
+        #status { margin-top: 10px; font-weight: bold; color: #0066cc; }
+        .table-responsive { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { border: 1px solid #d0d7de; padding: 8px; text-align: left; vertical-align: top; }
+        th { background-color: #f0f4f8; font-weight: bold; text-align: center; }
+        .num-col { text-align: center; width: 50px; font-weight: bold; }
+        input[type="text"], input[type="number"] { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        .warning-tag { display: block; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+        .summary-box { margin-top: 20px; padding: 15px; background: #f0f4f8; border-radius: 6px; font-size: 16px; font-weight: bold; text-align: right; border: 1px solid #d0d7de; }
     </style>
 </head>
 <body>
-    <h2>レシートを撮影・送信</h2>
-    <form id="uploadForm">
-        <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" required>
-        <br><br>
-        <button type="submit" id="submitBtn">解析して記録</button>
-    </form>
+    <div class="container">
+        <h2>青藍会 決算報告用レシート管理</h2>
+        
+        <div class="upload-section">
+            <h3>レシートを撮影・追加</h3>
+            <form id="uploadForm">
+                <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" required>
+                <br>
+                <button type="submit" id="submitBtn">解析して一覧に追加</button>
+            </form>
+            <div id="status"></div>
+        </div>
 
-    <div id="status" style="margin-top: 15px; font-weight: bold; color: #0066cc;"></div>
+        <div id="listSection">
+            <h3>支出一覧（決算報告用）</h3>
+            <div class="table-responsive">
+                <table id="receiptTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">通し番号</th>
+                            <th style="width: 120px;">日付</th>
+                            <th style="width: 150px;">支払先（店舗名）</th>
+                            <th style="width: 140px;">宛名</th>
+                            <th style="width: 150px;">但書（品名など）</th>
+                            <th style="width: 100px;">支払方法</th>
+                            <th style="width: 110px;">金額(円)</th>
+                            <th>ガイドライン不備チェック・警告</th>
+                            <th style="width: 60px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="receiptList">
+                        <!-- 動的に追加される行 -->
+                    </tbody>
+                </table>
+            </div>
 
-    <div id="resultBox" style="display:none;">
-        <h3>解析結果:</h3>
-        <pre id="jsonOutput" style="white-space: pre-wrap; word-break: break-all;"></pre>
+            <div class="summary-box">
+                合計件数: <span id="totalCount">0</span> 件 | 支出合計額: ¥<span id="totalSum">0</span>
+            </div>
+        </div>
     </div>
 
     <script>
+        let receiptData = [];
+
         document.getElementById('uploadForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const fileInput = document.getElementById('fileInput');
             const status = document.getElementById('status');
             const submitBtn = document.getElementById('submitBtn');
-            const resultBox = document.getElementById('resultBox');
-            const jsonOutput = document.getElementById('jsonOutput');
 
             if (!fileInput.files[0]) return;
 
             submitBtn.disabled = true;
-            resultBox.style.display = 'none';
             status.innerText = "⚡ 解析中...";
 
             const startTime = Date.now();
             const file = fileInput.files[0];
             
-            // 長辺500px, 画質0.5まで極限圧縮（データ量を約10〜20KBにする）
+            // 長辺500px, 画質0.5まで圧縮
             const resizedBlob = await resizeImage(file, 500, 0.5);
 
             const formData = new FormData();
@@ -55,22 +98,179 @@
                 });
                 const data = await response.json();
                 
-                // 処理にかかった秒数を計算
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 
                 if (data.result) {
-                    jsonOutput.innerText = data.result;
-                    resultBox.style.display = 'block';
-                    status.innerText = `✅ 完了 (${elapsed}秒)`;
+                    const parsed = JSON.parse(data.result);
+                    addReceiptToList(parsed);
+                    status.innerText = `✅ 追加完了 (${elapsed}秒)`;
+                    fileInput.value = '';
                 } else {
                     status.innerText = "エラー: " + (data.error || "解析失敗");
                 }
             } catch (err) {
-                status.innerText = "通信エラーが発生しました";
+                status.innerText = "通信エラーまたは解析データの読み取りに失敗しました";
+                console.error(err);
             } finally {
                 submitBtn.disabled = false;
             }
         });
+
+        function addReceiptToList(parsedItem) {
+            receiptData.push({
+                date: parsedItem.date || '',
+                store_name: parsedItem.store_name || '',
+                addressee: parsedItem.addressee || '',
+                proviso: parsedItem.proviso || '',
+                payment_method: parsedItem.payment_method || '',
+                total_amount: parsedItem.total_amount || 0,
+                warnings: parsedItem.warnings || []
+            });
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('receiptList');
+            tbody.innerHTML = '';
+
+            let sum = 0;
+
+            receiptData.forEach((item, index) => {
+                sum += Number(item.total_amount) || 0;
+                const tr = document.createElement('tr');
+
+                // 通し番号
+                const tdNum = document.createElement('td');
+                tdNum.className = 'num-col';
+                tdNum.innerText = index + 1;
+                tr.appendChild(tdNum);
+
+                // 日付
+                const tdDate = document.createElement('td');
+                const inDate = document.createElement('input');
+                inDate.type = 'text';
+                inDate.value = item.date;
+                inDate.onchange = (e) => { item.date = e.target.value; };
+                tdDate.appendChild(inDate);
+                tr.appendChild(tdDate);
+
+                // 支払先
+                const tdStore = document.createElement('td');
+                const inStore = document.createElement('input');
+                inStore.type = 'text';
+                inStore.value = item.store_name;
+                inStore.onchange = (e) => { item.store_name = e.target.value; };
+                tdStore.appendChild(inStore);
+                tr.appendChild(tdStore);
+
+                // 宛名
+                const tdAddr = document.createElement('td');
+                const inAddr = document.createElement('input');
+                inAddr.type = 'text';
+                inAddr.value = item.addressee;
+                inAddr.onchange = (e) => { item.addressee = e.target.value; recheckWarnings(index); };
+                tdAddr.appendChild(inAddr);
+                tr.appendChild(tdAddr);
+
+                // 但書
+                const tdProv = document.createElement('td');
+                const inProv = document.createElement('input');
+                inProv.type = 'text';
+                inProv.value = item.proviso;
+                inProv.onchange = (e) => { item.proviso = e.target.value; recheckWarnings(index); };
+                tdProv.appendChild(inProv);
+                tr.appendChild(tdProv);
+
+                // 支払方法
+                const tdPay = document.createElement('td');
+                const inPay = document.createElement('input');
+                inPay.type = 'text';
+                inPay.value = item.payment_method;
+                inPay.onchange = (e) => { item.payment_method = e.target.value; };
+                tdPay.appendChild(inPay);
+                tr.appendChild(tdPay);
+
+                // 金額
+                const tdAmt = document.createElement('td');
+                const inAmt = document.createElement('input');
+                inAmt.type = 'number';
+                inAmt.value = item.total_amount;
+                inAmt.onchange = (e) => { 
+                    item.total_amount = Number(e.target.value) || 0; 
+                    recheckWarnings(index);
+                    updateSummary(); 
+                };
+                tdAmt.appendChild(inAmt);
+                tr.appendChild(tdAmt);
+
+                // 警告・不備情報
+                const tdWarn = document.createElement('td');
+                tdWarn.id = `warn-${index}`;
+                renderWarningsTd(tdWarn, item.warnings);
+                tr.appendChild(tdWarn);
+
+                // 操作（削除）
+                const tdAction = document.createElement('td');
+                tdAction.style.textAlign = 'center';
+                const delBtn = document.createElement('button');
+                delBtn.innerText = '削除';
+                delBtn.className = 'btn-danger';
+                delBtn.onclick = () => {
+                    receiptData.splice(index, 1);
+                    renderTable();
+                };
+                tdAction.appendChild(delBtn);
+                tr.appendChild(tdAction);
+
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('totalCount').innerText = receiptData.length;
+            document.getElementById('totalSum').innerText = sum.toLocaleString();
+        }
+
+        function renderWarningsTd(tdElement, warnings) {
+            tdElement.innerHTML = '';
+            if (!warnings || warnings.length === 0) {
+                tdElement.innerHTML = '<span style="color: green; font-size: 12px;">問題なし</span>';
+            } else {
+                warnings.forEach(w => {
+                    const tag = document.createElement('span');
+                    tag.className = 'warning-tag';
+                    tag.innerText = '⚠️ ' + w;
+                    tdElement.appendChild(tag);
+                });
+            }
+        }
+
+        function recheckWarnings(index) {
+            const item = receiptData[index];
+            const warnings = [];
+
+            if (!item.addressee || !item.addressee.includes('東邦大学')) {
+                warnings.push('宛名が大学・団体名ではありません（個人名の場合は部員名簿等の添付が必要です）。');
+            }
+            if (item.proviso.includes('品代') || item.proviso.includes('備品代')) {
+                warnings.push('但書が曖昧です（具体的な購入品がわかる明細レシート等を添付してください）。');
+            }
+            if (Number(item.total_amount) >= 50000) {
+                warnings.push('5万円以上の支出です（収入印紙・割印の貼付、またはクレジットカード利用の明記が必要です）。');
+            }
+
+            item.warnings = warnings;
+            const tdWarn = document.getElementById(`warn-${index}`);
+            if (tdWarn) {
+                renderWarningsTd(tdWarn, warnings);
+            }
+        }
+
+        function updateSummary() {
+            let sum = 0;
+            receiptData.forEach(item => {
+                sum += Number(item.total_amount) || 0;
+            });
+            document.getElementById('totalSum').innerText = sum.toLocaleString();
+        }
 
         // 高速圧縮関数
         function resizeImage(file, maxWidth, quality) {
