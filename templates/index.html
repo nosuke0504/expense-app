@@ -415,7 +415,7 @@
                 <!-- GAS連携URL設定ボックス -->
                 <div class="gas-setting-box">
                     <label for="gasUrl"><i class="fa-solid fa-table"></i> Googleスプレッドシート連携 (GAS WebアプリURL):</label>
-                    <input type="text" id="gasUrl" placeholder="https://script.google.com/macros/s/AKfycbyNfxNYjljwEf6kR8DlzPve_6ZaG5fiBEPGFQ9jKtBrSZOk-csWg1oRfs7Z2vMRfnlk/exec" onchange="saveGasUrl()">
+                    <input type="text" id="gasUrl" value="https://script.google.com/macros/s/AKfycbyNfxNYjljwEf6kR8DlzPve_6ZaG5fiBEPGFQ9jKtBrSZOk-csWg1oRfs7Z2vMRfnlk/exec" placeholder="https://script.google.com/macros/s/.../exec" onchange="saveGasUrl()">
                 </div>
             </div>
 
@@ -583,7 +583,7 @@
         let receiptData = [];
         let currentPendingItem = null;
 
-        // ページ読み込み時にGAS URLを復元
+        // ページ読み込み時に保存済みURLがあればそれを優先（無ければ初期のデフォルト値を使用）
         window.addEventListener('DOMContentLoaded', () => {
             const savedGasUrl = localStorage.getItem('toho_receipt_gas_url');
             if (savedGasUrl) {
@@ -1000,7 +1000,6 @@
             };
 
             try {
-                // GASへの送信 (CORS回避のため text/plain で送信)
                 await fetch(gasUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
