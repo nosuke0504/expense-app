@@ -4,10 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>レシート記録アプリ</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #resultBox { margin-top: 15px; padding: 12px; background: #f0f4f8; border-radius: 8px; border: 1px solid #d0d7de; }
+    </style>
 </head>
 <body>
     <h2>レシートを撮影・送信</h2>
-    <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+    <form id="uploadForm">
         <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" required>
         <br><br>
         <button type="submit" id="submitBtn">解析して記録</button>
@@ -15,23 +19,31 @@
 
     <div id="status" style="margin-top: 15px; font-weight: bold; color: #0066cc;"></div>
 
+    <div id="resultBox" style="display:none;">
+        <h3>解析結果:</h3>
+        <pre id="jsonOutput" style="white-space: pre-wrap; word-break: break-all;"></pre>
+    </div>
+
     <script>
         document.getElementById('uploadForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const fileInput = document.getElementById('fileInput');
             const status = document.getElementById('status');
             const submitBtn = document.getElementById('submitBtn');
+            const resultBox = document.getElementById('resultBox');
+            const jsonOutput = document.getElementById('jsonOutput');
 
             if (!fileInput.files[0]) return;
 
             submitBtn.disabled = true;
-            status.innerText = "⚡ 画像を軽量化して送信中...";
+            resultBox.style.display = 'none';
+            status.innerText = "⚡ 解析中...";
 
+            const startTime = Date.now();
             const file = fileInput.files[0];
-            // スマホ側で最大幅600px・画質0.6に一瞬で圧縮
-            const resizedBlob = await resizeImage(file, 600, 0.6);
-
-            status.innerText = "🤖 AI解析中...";
+            
+            // 長辺500px, 画質0.5まで極限圧縮（データ量を約10〜20KBにする）
+            const resizedBlob = await resizeImage(file, 500, 0.5);
 
             const formData = new FormData();
             formData.append('file', resizedBlob, 'receipt.jpg');
@@ -41,15 +53,26 @@
                     method: 'POST',
                     body: formData
                 });
-                const resultHtml = await response.text();
-                document.body.innerHTML = resultHtml;
+                const data = await response.json();
+                
+                // 処理にかかった秒数を計算
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                if (data.result) {
+                    jsonOutput.innerText = data.result;
+                    resultBox.style.display = 'block';
+                    status.innerText = `✅ 完了 (${elapsed}秒)`;
+                } else {
+                    status.innerText = "エラー: " + (data.error || "解析失敗");
+                }
             } catch (err) {
-                status.innerText = "エラーが発生しました";
+                status.innerText = "通信エラーが発生しました";
+            } finally {
                 submitBtn.disabled = false;
             }
         });
 
-        // ブラウザ側で高速リサイズ・圧縮する関数
+        // 高速圧縮関数
         function resizeImage(file, maxWidth, quality) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
