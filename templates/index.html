@@ -473,8 +473,8 @@
                 </h3>
                 <form id="manualForm">
                     <div class="manual-form-group">
-                        <label for="m_date">支払年月日 (YYYY-MM-DD):</label>
-                        <input type="text" id="m_date" placeholder="例: 2026-06-12" required>
+                        <label for="m_date">支払年月日 (月/日/年 例: 5/7/26):</label>
+                        <input type="text" id="m_date" placeholder="例: 5/7/26" required>
                     </div>
                     <div class="manual-form-group">
                         <label for="m_proviso">摘要（但書・品名など）:</label>
@@ -525,7 +525,7 @@
 
             <form id="previewForm">
                 <div class="manual-form-group">
-                    <label for="p_date">支払年月日 (YYYY-MM-DD):</label>
+                    <label for="p_date">支払年月日 (月/日/年 例: 5/7/26):</label>
                     <input type="text" id="p_date" required>
                 </div>
                 <div class="manual-form-group">
@@ -586,6 +586,42 @@
         let receiptData = [];
         let currentPendingItem = null;
 
+        // 日付文字列を M/D/YY (例: 5/7/26) 形式へ自動変換・統一する関数
+        function formatDateMDY(dStr) {
+            if (!dStr) return '';
+            if (typeof dStr !== 'string') dStr = String(dStr);
+            dStr = dStr.trim();
+
+            // YYYY-MM-DD 形式の場合
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+                const [y, m, d] = dStr.split('-');
+                return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y.slice(2)}`;
+            }
+
+            // M/D/Y または M/D/YY 形式の場合
+            const parts = dStr.split('/');
+            if (parts.length === 3) {
+                let [m, d, y] = parts;
+                if (y.length === 4) y = y.slice(2);
+                return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+            }
+
+            return dStr;
+        }
+
+        // M/D/YY (例: 5/7/26) 形式の日付を YYYY-MM-DD にパースして正確にソート比較する関数
+        function parseDateForSort(dStr) {
+            if (!dStr) return '9999-99-99';
+            const parts = String(dStr).trim().split('/');
+            if (parts.length === 3) {
+                let [m, d, y] = parts;
+                if (y.length === 2) y = "20" + y;
+                return `${y.padStart(4, '0')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            }
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) return dStr;
+            return String(dStr);
+        }
+
         // ページ読み込み時にスプレッドシートから自動データ取得
         window.addEventListener('DOMContentLoaded', () => {
             const savedGasUrl = localStorage.getItem('toho_receipt_gas_url');
@@ -610,7 +646,10 @@
                 const data = await response.json();
 
                 if (data.status === 'success' && Array.isArray(data.receipts)) {
-                    receiptData = data.receipts;
+                    receiptData = data.receipts.map(item => ({
+                        ...item,
+                        date: formatDateMDY(item.date)
+                    }));
                     // 各項目の不備再チェック
                     receiptData.forEach((_, idx) => recheckWarnings(idx));
                     if (document.getElementById('listView').style.display !== 'none') {
@@ -756,7 +795,7 @@
         // 解析結果確認モーダルを開く関数
         function openPreviewModal(parsed) {
             currentPendingItem = parsed;
-            document.getElementById('p_date').value = parsed.date || '';
+            document.getElementById('p_date').value = formatDateMDY(parsed.date) || '';
             document.getElementById('p_proviso').value = parsed.proviso || '';
             document.getElementById('p_amount').value = parsed.total_amount || 0;
             document.getElementById('p_store').value = parsed.store_name || '';
@@ -777,7 +816,7 @@
             if (!currentPendingItem) return;
 
             const item = {
-                date: document.getElementById('p_date').value,
+                date: formatDateMDY(document.getElementById('p_date').value),
                 store_name: document.getElementById('p_store').value,
                 addressee: document.getElementById('p_addressee').value,
                 proviso: document.getElementById('p_proviso').value,
@@ -799,7 +838,7 @@
         document.getElementById('manualForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const item = {
-                date: document.getElementById('m_date').value,
+                date: formatDateMDY(document.getElementById('m_date').value),
                 store_name: document.getElementById('m_store').value,
                 addressee: document.getElementById('m_addressee').value,
                 proviso: document.getElementById('m_proviso').value,
@@ -821,8 +860,8 @@
         function getNumberedReceipts() {
             let sorted = receiptData.map((item, originalIndex) => ({ item, originalIndex }));
             sorted.sort((a, b) => {
-                const da = a.item.date || '9999-99-99';
-                const db = b.item.date || '9999-99-99';
+                const da = parseDateForSort(a.item.date);
+                const db = parseDateForSort(b.item.date);
                 if (da < db) return -1;
                 if (da > db) return 1;
                 return a.originalIndex - b.originalIndex;
@@ -848,8 +887,8 @@
             getNumberedReceipts();
 
             let displayItems = [...receiptData].sort((a, b) => {
-                const da = a.date || '0000-00-00';
-                const db = b.date || '0000-00-00';
+                const da = parseDateForSort(a.date);
+                const db = parseDateForSort(b.date);
                 if (da > db) return -1;
                 if (da < db) return 1;
                 return (b.number || 0) - (a.number || 0);
@@ -889,8 +928,8 @@
                 td0.style.backgroundColor = '#f8f9fa';
                 rows[0].appendChild(td0);
 
-                rows[1].appendChild(createInputTd(item.date, (v) => {
-                    item.date = v;
+                rows[1].appendChild(createInputTd(formatDateMDY(item.date), (v) => {
+                    item.date = formatDateMDY(v);
                     recheckWarnings(originalIndex);
                     renderList();
                 }));
@@ -1094,7 +1133,7 @@
 
             sortedReceipts.forEach((item) => {
                 const warnText = (item.warnings || []).join(' / ').replace(/"/g, '""');
-                csvContent += `"${item.number}","${item.date}","${item.proviso}","${item.total_amount}","${item.store_name}","${item.addressee}","${item.payment_method}","${warnText}"\n`;
+                csvContent += `"${item.number}","${formatDateMDY(item.date)}","${item.proviso}","${item.total_amount}","${item.store_name}","${item.addressee}","${item.payment_method}","${warnText}"\n`;
             });
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1132,7 +1171,7 @@
                     <div class="a4-details">
                         <hr>
                         <strong>【記載内容確認】</strong><br>
-                        支払年月日: ${item.date} | 支出金額: ¥${Number(item.total_amount).toLocaleString()} | 摘要: ${item.proviso}<br>
+                        支払年月日: ${formatDateMDY(item.date)} | 支出金額: ¥${Number(item.total_amount).toLocaleString()} | 摘要: ${item.proviso}<br>
                         備考/支払先: ${item.store_name} | 宛名: ${item.addressee} | 支払方法: ${item.payment_method}<br>
                         ${(item.warnings && item.warnings.length > 0) ? `<span style="color:red;">⚠️ 注意事項: ${item.warnings.join(', ')}</span>` : ''}
                     </div>
