@@ -23,9 +23,17 @@ def upload():
         return jsonify({"error": "ファイルが選択されていません"}), 400
     
     try:
-        image = Image.open(io.BytesIO(file.read()))
+        # 画像データを読み込み・軽量JPEGへ変換
+        image = Image.open(io.BytesIO(file.read())).convert('RGB')
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=60)
+        
+        # API送信用のPartオブジェクトを高速作成
+        image_part = types.Part.from_bytes(
+            data=img_byte_arr.getvalue(),
+            mime_type="image/jpeg"
+        )
 
-        # AI処理の最速設定
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.0,
@@ -34,7 +42,7 @@ def upload():
 
         response = client.models.generate_content(
             model='gemini-3.8-flash',
-            contents=[image, "Return JSON only."],
+            contents=[image_part, "Return JSON only."],
             config=config
         )
 
