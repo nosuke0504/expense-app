@@ -33,6 +33,7 @@ def upload():
             mime_type="image/jpeg"
         )
 
+        # JSONレスポンスの構造を厳密に指定
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.0,
@@ -48,6 +49,7 @@ def upload():
             config=config
         )
 
+        # Geminiから返ってきたJSON文字列をパース
         parsed_data = json.loads(response.text)
 
         return jsonify({"success": True, "data": parsed_data})
@@ -59,6 +61,8 @@ def save():
     try:
         data = request.json
         print("保存されたデータ:", data)
+        # ※ ここにスプレッドシートやDBへの書き込み処理を接続できます
+        
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

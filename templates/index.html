@@ -1,71 +1,175 @@
-import os
-import io
-import json
-from flask import Flask, render_template, request, jsonify
-from PIL import Image
-from google import genai
-from google.genai import types
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシート連続記録アプリ</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; background-color: #f8f9fa; color: #333; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px; }
+        h2 { font-size: 1.2rem; margin-top: 0; color: #1a73e8; }
+        label { display: block; margin-top: 12px; font-weight: bold; font-size: 0.9rem; color: #555; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .btn-camera { display: block; width: 100%; text-align: center; background: #1a73e8; color: white; padding: 14px 0; border-radius: 8px; font-size: 1.1rem; font-weight: bold; text-decoration: none; cursor: pointer; }
+        .btn-save { width: 100%; background: #34a853; color: white; padding: 12px 0; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; margin-top: 20px; cursor: pointer; }
+        .btn-save:disabled { background: #ccc; }
+        #fileInput { display: none; }
+        #status { text-align: center; font-weight: bold; margin: 12px 0; color: #1a73e8; }
+        #successMsg { display: none; background: #e6f4ea; color: #137333; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 12px; }
+    </style>
+</head>
+<body>
 
-app = Flask(__name__)
-
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/upload', methods=['POST'])
-def upload():
-    if 'file' not in request.files:
-        return jsonify({"success": False, "error": "ファイルが送信されていません"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"success": False, "error": "ファイルが選択されていません"}), 400
-    
-    try:
-        image = Image.open(io.BytesIO(file.read())).convert('RGB')
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=60)
+    <div class="card">
+        <h2>📷 レシート撮影</h2>
+        <!-- カメラ起動ボタン -->
+        <label for="fileInput" class="btn-camera" id="cameraLabel">レシートを撮影する</label>
+        <input type="file" id="fileInput" accept="image/*" capture="environment">
         
-        image_part = types.Part.from_bytes(
-            data=img_byte_arr.getvalue(),
-            mime_type="image/jpeg"
-        )
+        <div id="status"></div>
+    </div>
 
-        # JSONレスポンスの構造を厳密に指定
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.0,
-            system_instruction=(
-                "Extract date (YYYY-MM-DD), store_name, and total_amount (number only) from receipt. "
-                "Return JSON with keys: 'date', 'store_name', 'total_amount'."
-            )
-        )
+    <!-- 解析結果・修正フォーム -->
+    <div class="card" id="formCard" style="display: none;">
+        <h2>✏️ 内容の確認・修正</h2>
+        <form id="saveForm">
+            <label for="dateInput">日付</label>
+            <input type="text" id="dateInput" name="date" placeholder="2026-10-17" required>
 
-        response = client.models.generate_content(
-            model='gemini-3.8-flash',
-            contents=[image_part, "Extract receipt info."],
-            config=config
-        )
+            <label for="storeInput">店舗名</label>
+            <input type="text" id="storeInput" name="store_name" placeholder="セブン-イレブン" required>
 
-        # Geminiから返ってきたJSON文字列をパース
-        parsed_data = json.loads(response.text)
+            <label for="amountInput">合計金額 (円)</label>
+            <input type="number" id="amountInput" name="total_amount" placeholder="1280" required>
 
-        return jsonify({"success": True, "data": parsed_data})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+            <button type="submit" class="btn-save" id="saveBtn">この内容で保存する</button>
+        </form>
+    </div>
 
-@app.route('/save', methods=['POST'])
-def save():
-    try:
-        data = request.json
-        print("保存されたデータ:", data)
-        # ※ ここにスプレッドシートやDBへの書き込み処理を接続できます
-        
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    <div id="successMsg"></div>
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+        const formCard = document.getElementById('formCard');
+        const successMsg = document.getElementById('successMsg');
+        const cameraLabel = document.getElementById('cameraLabel');
+
+        // 1. カメラで撮影（ファイル選択）したら自動で解析を開始
+        fileInput.addEventListener('change', async function() {
+            if (!fileInput.files[0]) return;
+
+            status.innerText = "⚡ 撮影画像を自動解析中...";
+            formCard.style.display = 'none';
+            successMsg.style.display = 'none';
+            cameraLabel.style.opacity = '0.5';
+
+            const startTime = Date.now();
+            const file = fileInput.files[0];
+            
+            // 超高速圧縮 (長辺600px, 画質0.55)
+            const resizedBlob = await resizeImage(file, 600, 0.55);
+
+            const formData = new FormData();
+            formData.append('file', resizedBlob, 'receipt.jpg');
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+                if (data.success) {
+                    // 解析結果を各フォーム要素に自動代入
+                    document.getElementById('dateInput').value = data.data.date || '';
+                    document.getElementById('storeInput').value = data.data.store_name || '';
+                    document.getElementById('amountInput').value = data.data.total_amount || '';
+
+                    formCard.style.display = 'block';
+                    status.innerText = `✅ 解析完了 (${elapsed}秒) - 内容を確認してください`;
+                } else {
+                    status.innerText = "❌ 解析エラー: " + (data.error || "読み取れませんでした");
+                }
+            } catch (err) {
+                status.innerText = "通信エラーが発生しました";
+            } finally {
+                cameraLabel.style.opacity = '1';
+                fileInput.value = ''; // 次の撮影用にクリア
+            }
+        });
+
+        // 2. 確認・修正後に「保存する」ボタンを押したときの処理
+        document.getElementById('saveForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+
+            const payload = {
+                date: document.getElementById('dateInput').value,
+                store_name: document.getElementById('storeInput').value,
+                total_amount: document.getElementById('amountInput').value
+            };
+
+            try {
+                const response = await fetch('/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const res = await response.json();
+
+                if (res.success) {
+                    formCard.style.display = 'none';
+                    status.innerText = "";
+                    successMsg.innerText = "🎉 保存が完了しました！";
+                    successMsg.style.display = 'block';
+                } else {
+                    alert("保存に失敗しました");
+                }
+            } catch (err) {
+                alert("通信エラーが発生しました");
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+
+        // 画像高速圧縮関数
+        function resizeImage(file, maxDimension, quality) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > maxDimension) {
+                                height = Math.round((height * maxDimension) / width);
+                                width = maxDimension;
+                            }
+                        } else {
+                            if (height > maxDimension) {
+                                width = Math.round((width * maxDimension) / height);
+                                height = maxDimension;
+                            }
+                        }
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+    </script>
+</body>
+</html>
