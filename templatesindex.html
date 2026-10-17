@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシート記録アプリ</title>
+</head>
+<body>
+    <h2>レシートを撮影・送信</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <!-- capture="environment" によりスマホの外カメラが起動します -->
+        <input type="file" name="file" accept="image/*" capture="environment" required>
+        <br><br>
+        <button type="submit">解析して記録</button>
+    </form>
+</body>
+</html>
