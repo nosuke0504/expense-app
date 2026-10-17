@@ -1,9 +1,11 @@
 import os
 import io
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from PIL import Image
 from google import genai
 from google.genai import types
+import openpyxl
+from openpyxl.styles import PatternFill
 
 app = Flask(__name__)
 
@@ -66,6 +68,66 @@ def upload():
         )
 
         return jsonify({"result": response.text})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/export_excel', methods=['POST'])
+def export_excel():
+    try:
+        data = request.get_json() or {}
+        receipts = data.get('receipts', [])
+        subsidy = data.get('subsidy', 0)
+        group_name = data.get('group_name', '○○部')
+        author_name = data.get('author_name', '')
+
+        template_filename = '学生団体（各部活動）202506.xlsx'
+        if not os.path.exists(template_filename):
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = '決算報告'
+        else:
+            wb = openpyxl.load_workbook(template_filename)
+            ws = wb['決算報告'] if '決算報告' in wb.sheetnames else wb.active
+
+        # 背景色を白一色に設定するためのスタイル
+        white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+
+        # 1. ヘッダー基本情報の書き込み
+        ws.cell(row=2, column=5, value=group_name)  # 団体名 (E2)
+        ws.cell(row=3, column=5, value=author_name) # 作成者名 (E3)
+        ws.cell(row=7, column=5, value=subsidy)     # 補助支給額 (E7)
+
+        # 2. 支出明細の書き込み (14行目から開始)
+        start_row = 14
+        for i, item in enumerate(receipts):
+            r = start_row + i
+            amt = item.get('total_amount', 0)
+            try:
+                amt = float(amt)
+            except (ValueError, TypeError):
+                amt = 0
+
+            ws.cell(row=r, column=2, value=i + 1)                      # 通し番号 (B列)
+            ws.cell(row=r, column=3, value=item.get('date', ''))        # 支払年月日 (C列)
+            ws.cell(row=r, column=4, value=item.get('proviso', ''))     # 摘要/但書 (D列)
+            ws.cell(row=r, column=5, value=amt)                        # 支出金額 (E列)
+            ws.cell(row=r, column=6, value=item.get('store_name', ''))  # 備考 (F列)
+
+        # 3. 全セルの背景色を白一色に変更
+        for row in ws.iter_rows(min_row=1, max_row=max(100, start_row + len(receipts) + 5), min_col=1, max_col=10):
+            for cell in row:
+                cell.fill = white_fill
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='東邦大学青藍会_決算報告書.xlsx'
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
