@@ -167,6 +167,7 @@
         button.btn-success { background-color: #565902; color: #ffffff; }
         button.btn-danger { background-color: #dc3545; padding: 6px 12px; min-height: 34px; }
         button.btn-secondary { background-color: #011126; color: #ffffff; }
+        button.btn-sheets { background-color: #0F9D58; color: #ffffff; }
         
         #status { margin-top: 10px; font-weight: 700; color: #F2CA7E; min-height: 20px; font-size: 12px; }
 
@@ -202,6 +203,26 @@
         }
         .form-item { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; color: #011126; }
         .form-item label { min-width: 90px; color: #565902; }
+
+        /* GAS設定枠 */
+        .gas-setting-box {
+            background-color: rgba(15, 157, 88, 0.08);
+            border: 1.5px solid #0F9D58;
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .gas-setting-box label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #0F9D58;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
 
         /* Excel風 縦軸固定テーブルレイアウト */
         .table-responsive {
@@ -296,7 +317,7 @@
         .manual-form-group label { display: block; font-weight: 700; margin-bottom: 4px; font-size: 12px; color: #011126; }
 
         @media (min-width: 768px) {
-            .action-bar { flex-direction: row; justify-content: flex-end; }
+            .action-bar { flex-direction: row; justify-content: flex-end; flex-wrap: wrap; }
             .action-bar button { width: auto; }
             .excel-vertical-table th.sticky-header { min-width: 180px; font-size: 12px; }
             input[type="text"], input[type="number"], select { font-size: 13px; padding: 7px; }
@@ -390,6 +411,12 @@
                         <input type="text" id="mail" placeholder="例: sample@toho-u.ac.jp">
                     </div>
                 </div>
+
+                <!-- GAS連携URL設定ボックス -->
+                <div class="gas-setting-box">
+                    <label for="gasUrl"><i class="fa-solid fa-table"></i> Googleスプレッドシート連携 (GAS WebアプリURL):</label>
+                    <input type="text" id="gasUrl" placeholder="https://script.google.com/macros/s/AKfycbyNfxNYjljwEf6kR8DlzPve_6ZaG5fiBEPGFQ9jKtBrSZOk-csWg1oRfs7Z2vMRfnlk/exec" onchange="saveGasUrl()">
+                </div>
             </div>
 
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -418,8 +445,11 @@
                 </div>
             </div>
 
-            <!-- ファイル出力・印刷ボタン -->
+            <!-- ファイル出力・Googleスプレッドシート・印刷ボタン -->
             <div class="action-bar">
+                <button onclick="exportToGoogleSheets()" class="btn-sheets">
+                    <i class="fa-solid fa-file-spreadsheet"></i> Googleスプレッドシートへ記録
+                </button>
                 <button onclick="exportExcel()" class="btn-success" style="background-color: #1d6f42;">
                     <i class="fa-solid fa-file-excel"></i> ひな形Excel出力 (.xlsx)
                 </button>
@@ -427,7 +457,7 @@
                     <i class="fa-solid fa-file-csv"></i> CSV出力
                 </button>
                 <button onclick="printA4Sheets()" class="btn-success">
-                    <i class="fa-solid fa-print"></i> A4貼り付け台紙の印刷・PDF
+                    <i class="fa-solid fa-print"></i> A4台紙印刷
                 </button>
             </div>
         </div>
@@ -453,7 +483,7 @@
                     </div>
                     <div class="manual-form-group">
                         <label for="m_store">備考（購入目的・店舗名など）:</label>
-                        <input type="text" id="m_store" placeholder="例: 〇〇文具店 / ○○大会用">
+                        <input type="text" id="m_store" placeholder="例: 〇〇文具店 / 〇〇大会用">
                     </div>
                     <div class="manual-form-group">
                         <label for="m_addressee">宛名:</label>
@@ -551,7 +581,20 @@
         let lastFrameData = null;
         let stableCount = 0;
         let receiptData = [];
-        let currentPendingItem = null; // プレビュー確認中のデータ
+        let currentPendingItem = null;
+
+        // ページ読み込み時にGAS URLを復元
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedGasUrl = localStorage.getItem('toho_receipt_gas_url');
+            if (savedGasUrl) {
+                document.getElementById('gasUrl').value = savedGasUrl;
+            }
+        });
+
+        function saveGasUrl() {
+            const url = document.getElementById('gasUrl').value.trim();
+            localStorage.setItem('toho_receipt_gas_url', url);
+        }
 
         // タブ切り替え機能
         function switchTab(tabName) {
@@ -659,7 +702,6 @@
                         const parsed = JSON.parse(data.result);
                         parsed.imageData = imageDataUrl;
                         
-                        // 直接追加せず手動修正モーダルを開く
                         openPreviewModal(parsed);
                         status.innerText = "📝 解析結果の修正・確認画面が開きました";
 
@@ -698,14 +740,12 @@
             document.getElementById('previewModal').style.display = 'flex';
         }
 
-        // モーダルを閉じる関数
         function closePreviewModal() {
             document.getElementById('previewModal').style.display = 'none';
             currentPendingItem = null;
             status.innerText = "🔍 レシートをカメラに固定してください（自動検出中...）";
         }
 
-        // 確認モーダルフォーム送信イベント（記録実行）
         document.getElementById('previewForm').addEventListener('submit', function(e) {
             e.preventDefault();
             if (!currentPendingItem) return;
@@ -730,7 +770,6 @@
             switchTab('list');
         });
 
-        // 手動入力フォーム送信イベント
         document.getElementById('manualForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const item = {
@@ -753,21 +792,6 @@
             switchTab('list');
         });
 
-        function addReceiptToList(parsedItem) {
-            receiptData.push({
-                date: parsedItem.date || '',
-                store_name: parsedItem.store_name || '',
-                addressee: parsedItem.addressee || '',
-                proviso: parsedItem.proviso || '',
-                payment_method: parsedItem.payment_method || '',
-                total_amount: parsedItem.total_amount || 0,
-                doc_type: parsedItem.doc_type || '領収書',
-                imageData: parsedItem.imageData || '',
-                warnings: parsedItem.warnings || []
-            });
-        }
-
-        // 日付の古い順（昇順）にソートして1からの自動採番（領収書No.）を行う関数
         function getNumberedReceipts() {
             let sorted = receiptData.map((item, originalIndex) => ({ item, originalIndex }));
             sorted.sort((a, b) => {
@@ -785,7 +809,6 @@
             return sorted.map(e => e.item);
         }
 
-        // 決算報告書ひな形と完全に一致する縦軸固定レンダリング関数
         function renderList() {
             const container = document.getElementById('receiptCardsContainer');
             container.innerHTML = '';
@@ -796,10 +819,8 @@
                 return;
             }
 
-            // 古い順で領収書No.を1から再自動採番
             getNumberedReceipts();
 
-            // 画面の「支出一覧」では日付の新しい順（降順）に並び替えて表示
             let displayItems = [...receiptData].sort((a, b) => {
                 const da = a.date || '0000-00-00';
                 const db = b.date || '0000-00-00';
@@ -835,7 +856,6 @@
             displayItems.forEach((item) => {
                 const originalIndex = receiptData.indexOf(item);
 
-                // 0: 領収書No. (日付の古い順に割り当てられた番号)
                 const td0 = document.createElement('td');
                 td0.innerText = `${item.number}`;
                 td0.style.fontWeight = 'bold';
@@ -843,40 +863,32 @@
                 td0.style.backgroundColor = '#f8f9fa';
                 rows[0].appendChild(td0);
 
-                // 1: 支払年月日
                 rows[1].appendChild(createInputTd(item.date, (v) => {
                     item.date = v;
                     recheckWarnings(originalIndex);
-                    renderList(); // 日付変更で採番・並び順を自動更新
+                    renderList();
                 }));
 
-                // 2: 摘要（但書）
                 rows[2].appendChild(createInputTd(item.proviso, (v) => { item.proviso = v; recheckWarnings(originalIndex); }));
 
-                // 3: 支出金額(円)
                 rows[3].appendChild(createInputTd(item.total_amount, (v) => {
                     item.total_amount = Number(v) || 0;
                     recheckWarnings(originalIndex);
                     updateSummary();
                 }, 'number'));
 
-                // 4: 備考（購入目的・店舗名）
                 rows[4].appendChild(createInputTd(item.store_name, (v) => item.store_name = v));
 
-                // 5: 宛名
                 rows[5].appendChild(createInputTd(item.addressee, (v) => { item.addressee = v; recheckWarnings(originalIndex); }));
 
-                // 6: 支払方法
                 rows[6].appendChild(createInputTd(item.payment_method, (v) => item.payment_method = v));
 
-                // 7: ガイドライン不備チェック・警告
                 const tdWarn = document.createElement('td');
                 tdWarn.id = `warn-${originalIndex}`;
                 tdWarn.style.minWidth = '200px';
                 renderWarningsTd(tdWarn, item.warnings);
                 rows[7].appendChild(tdWarn);
 
-                // 8: 操作
                 const tdAction = document.createElement('td');
                 tdAction.style.textAlign = 'center';
                 const delBtn = document.createElement('button');
@@ -967,7 +979,41 @@
             document.getElementById('remainingAmount').innerText = remaining.toLocaleString();
         }
 
-        // ひな形Excel (.xlsx) 出力機能（番号の若い順・日付の古い順で送信）
+        // Googleスプレッドシートへの記録処理
+        async function exportToGoogleSheets() {
+            if (receiptData.length === 0) {
+                alert("送信するデータがありません。");
+                return;
+            }
+
+            const gasUrl = document.getElementById('gasUrl').value.trim();
+            if (!gasUrl) {
+                alert("Googleスプレッドシート連携用のGAS WebアプリURLを入力してください。");
+                document.getElementById('gasUrl').focus();
+                return;
+            }
+
+            const sortedReceipts = getNumberedReceipts();
+
+            const payload = {
+                receipts: sortedReceipts
+            };
+
+            try {
+                // GASへの送信 (CORS回避のため text/plain で送信)
+                await fetch(gasUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify(payload)
+                });
+
+                alert("Googleスプレッドシートへデータを追記・保存しました！");
+            } catch (err) {
+                alert("スプレッドシートへの送信時に通信エラーが発生しました。URLをご確認ください。");
+                console.error(err);
+            }
+        }
+
         async function exportExcel() {
             if (receiptData.length === 0) {
                 alert("出力するデータがありません。");
@@ -1011,7 +1057,6 @@
             }
         }
 
-        // CSV出力（番号の若い順・日付の古い順）
         function exportCSV() {
             if (receiptData.length === 0) {
                 alert("出力するデータがありません。");
@@ -1036,7 +1081,6 @@
             URL.revokeObjectURL(url);
         }
 
-        // A4印刷出力（番号の若い順・日付の古い順）
         function printA4Sheets() {
             if (receiptData.length === 0) {
                 alert("印刷するデータがありません。");
