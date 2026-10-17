@@ -5,7 +5,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 import openpyxl
-from openpyxl.styles import PatternFill, Border, Side
+from openpyxl.styles import PatternFill
 
 app = Flask(__name__)
 
@@ -82,18 +82,16 @@ def export_excel():
         tel = data.get('tel', '')
         mail = data.get('mail', '')
 
-        # ひな形テンプレートの読み込み
-        template_filename = '学生団体（各部活動）202506.xlsx'
+        # 英字名テンプレートファイルを優先的に読み込み
+        template_filename = 'template.xlsx'
         if not os.path.exists(template_filename):
-            template_filename = '学生団体（各部活動）202506_2.xlsx'
+            template_filename = '学生団体（各部活動）202506.xlsx'
 
         if not os.path.exists(template_filename):
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = '決算報告'
-        else:
-            wb = openpyxl.load_workbook(template_filename)
-            ws = wb['決算報告'] if '決算報告' in wb.sheetnames else wb.active
+            return jsonify({"error": "テンプレートファイル(template.xlsx)が見つかりません。"}), 500
+
+        wb = openpyxl.load_workbook(template_filename)
+        ws = wb['決算報告'] if '決算報告' in wb.sheetnames else wb.active
 
         # 目盛線（グリッド線）を表示
         if ws.views.sheetView:
@@ -101,35 +99,24 @@ def export_excel():
 
         white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
 
-        # 1. ひな形の正解位置へ書き込み（既存のラベルを消さない）
-        ws.cell(row=2, column=5, value=group_name)   # E2: 団体名
-        ws.cell(row=2, column=5).fill = white_fill
-
-        ws.cell(row=3, column=6, value=author_name)  # F3: 作成者名 (E3は「作成者名」ラベル)
-        ws.cell(row=3, column=6).fill = white_fill
-
-        ws.cell(row=4, column=6, value=tel)          # F4: TEL (E4は「TEL」ラベル)
-        ws.cell(row=4, column=6).fill = white_fill
-
-        ws.cell(row=5, column=6, value=mail)         # F5: MAIL (E5は「MAIL」ラベル)
-        ws.cell(row=5, column=6).fill = white_fill
+        # 1. テンプレートの正確なセル位置へ入力（固定ラベルセルは保持）
+        ws.cell(row=2, column=5, value=group_name).fill = white_fill   # E2: 団体名
+        ws.cell(row=3, column=6, value=author_name).fill = white_fill  # F3: 作成者名 (E3は「作成者名」ラベル)
+        ws.cell(row=4, column=6, value=tel).fill = white_fill          # F4: TEL (E4は「TEL」ラベル)
+        ws.cell(row=5, column=6, value=mail).fill = white_fill         # F5: MAIL (E5は「MAIL」ラベル)
 
         try:
             subsidy_val = float(subsidy)
         except (ValueError, TypeError):
             subsidy_val = 0
-        ws.cell(row=7, column=5, value=subsidy_val)  # E7: 補助支給額
-        ws.cell(row=7, column=5).fill = white_fill
+        ws.cell(row=7, column=5, value=subsidy_val).fill = white_fill  # E7: 補助支給額
 
-        # 2. テンプレートにあらかじめ入っているサンプルデータ（14行目以降）をクリア
-        max_clear_row = max(248, 14 + len(receipts))
-        for r in range(14, max_clear_row):
+        # 2. テンプレート内のサンプルデータをクリア（値のみ消去し、枠線・スタイルは維持）
+        for r in range(14, 248):
             for c in range(2, 7):
-                cell = ws.cell(row=r, column=c)
-                cell.value = None
-                cell.fill = white_fill
+                ws.cell(row=r, column=c).value = None
 
-        # 3. 支出明細の書き込み (14行目から開始)
+        # 3. 支出明細の流し込み (14行目から順次記録)
         start_row = 14
         for i, item in enumerate(receipts):
             r = start_row + i
@@ -139,26 +126,14 @@ def export_excel():
             except (ValueError, TypeError):
                 amt = 0
 
-            ws.cell(row=r, column=2, value=i + 1)                       # B列: 領収書No.
-            ws.cell(row=r, column=3, value=item.get('date', ''))         # C列: 支払年月日
-            ws.cell(row=r, column=4, value=item.get('proviso', ''))      # D列: 摘要
-            ws.cell(row=r, column=5, value=amt)                         # E列: 支出金額
-            
-            store_note = item.get('store_name', '')
-            ws.cell(row=r, column=6, value=store_note)                 # F列: 備考（店舗名/購入目的）
+            ws.cell(row=r, column=2, value=i + 1)                      # B列: 領収書No.
+            ws.cell(row=r, column=3, value=item.get('date', ''))        # C列: 支払年月日
+            ws.cell(row=r, column=4, value=item.get('proviso', ''))     # D列: 摘要
+            ws.cell(row=r, column=5, value=amt)                        # E列: 支出金額
+            ws.cell(row=r, column=6, value=item.get('store_name', '')) # F列: 備考（購入目的/店舗名）
 
-            for col_idx in range(2, 7):
-                cell = ws.cell(row=r, column=col_idx)
-                cell.fill = white_fill
-                # 罫線が未設定の場合は細罫線を補填
-                if not cell.border or not (cell.border.top.style or cell.border.bottom.style):
-                    thin_border = Border(
-                        left=Side(style='thin', color='D0D7DE'),
-                        right=Side(style='thin', color='D0D7DE'),
-                        top=Side(style='thin', color='D0D7DE'),
-                        bottom=Side(style='thin', color='D0D7DE')
-                    )
-                    cell.border = thin_border
+            for c in range(2, 7):
+                ws.cell(row=r, column=c).fill = white_fill
 
         output = io.BytesIO()
         wb.save(output)
