@@ -423,6 +423,9 @@
                 <h3 style="font-size: 15px; margin: 0; color: #011126; font-weight: 700;">
                     <i class="fa-solid fa-list-check text-[#565902] mr-1"></i> 支出一覧表（決算報告用）
                 </h3>
+                <button onclick="loadFromGoogleSheets()" style="font-size: 11px; padding: 4px 8px; min-height: auto; background-color: #0F9D58; color: white;">
+                    <i class="fa-solid fa-rotate"></i> シートから同期
+                </button>
             </div>
             
             <div id="receiptCardsContainer">
@@ -583,17 +586,40 @@
         let receiptData = [];
         let currentPendingItem = null;
 
-        // ページ読み込み時に保存済みURLがあればそれを優先（無ければ初期のデフォルト値を使用）
+        // ページ読み込み時にスプレッドシートから自動データ取得
         window.addEventListener('DOMContentLoaded', () => {
             const savedGasUrl = localStorage.getItem('toho_receipt_gas_url');
             if (savedGasUrl) {
                 document.getElementById('gasUrl').value = savedGasUrl;
             }
+            loadFromGoogleSheets();
         });
 
         function saveGasUrl() {
             const url = document.getElementById('gasUrl').value.trim();
             localStorage.setItem('toho_receipt_gas_url', url);
+        }
+
+        // Googleスプレッドシートからの自動読み込み（同期）関数
+        async function loadFromGoogleSheets() {
+            const gasUrl = document.getElementById('gasUrl').value.trim();
+            if (!gasUrl) return;
+
+            try {
+                const response = await fetch(gasUrl);
+                const data = await response.json();
+
+                if (data.status === 'success' && Array.isArray(data.receipts)) {
+                    receiptData = data.receipts;
+                    // 各項目の不備再チェック
+                    receiptData.forEach((_, idx) => recheckWarnings(idx));
+                    if (document.getElementById('listView').style.display !== 'none') {
+                        renderList();
+                    }
+                }
+            } catch (err) {
+                console.error("スプレッドシートからの自動読み込みに失敗しました:", err);
+            }
         }
 
         // タブ切り替え機能
@@ -979,7 +1005,7 @@
             document.getElementById('remainingAmount').innerText = remaining.toLocaleString();
         }
 
-        // Googleスプレッドシートへの記録処理
+        // Googleスプレッドシートへの一括同期・保存処理
         async function exportToGoogleSheets() {
             if (receiptData.length === 0) {
                 alert("送信するデータがありません。");
@@ -1006,7 +1032,7 @@
                     body: JSON.stringify(payload)
                 });
 
-                alert("Googleスプレッドシートへデータを追記・保存しました！");
+                alert("Googleスプレッドシートへデータを保存・同期しました！スマホ・PC間で共有されます。");
             } catch (err) {
                 alert("スプレッドシートへの送信時に通信エラーが発生しました。URLをご確認ください。");
                 console.error(err);
