@@ -3,6 +3,7 @@ import io
 from flask import Flask, render_template, request, redirect, url_for
 from PIL import Image
 from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
@@ -25,20 +26,19 @@ def upload():
         return "ファイルが選択されていません", 400
     
     try:
-        # 1. 画像処理：800pxまで小さくし、JPEG圧縮で通信量を激減させる
-        image = Image.open(io.BytesIO(file.read())).convert('RGB')
-        image.thumbnail((800, 800))
-        
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=75)
-        buffer.seek(0)
-        compressed_image = Image.open(buffer)
+        image = Image.open(io.BytesIO(file.read()))
 
-        # 2. AI処理：必要な項目だけを即答させるプロンプト
-        prompt = "レシート画像から「日付」「店舗名」「合計金額」を読み取り、JSON形式のみで出力してください。"
+        # AIの思考・生成速度を最速にする設定
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.0
+        )
+
+        prompt = "レシートから「日付」「店舗名」「合計金額」を読み取り、JSON形式のみで出力してください。"
         response = client.models.generate_content(
             model='gemini-3.8-flash',
-            contents=[compressed_image, prompt]
+            contents=[image, prompt],
+            config=config
         )
 
         return f"<h3>解析結果:</h3><pre>{response.text}</pre><br><a href='/'>再度撮影する</a>"
